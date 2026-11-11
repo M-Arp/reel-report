@@ -237,12 +237,10 @@ footer p { margin: 0 0 6px; max-width: 80ch; }
   <section class="panel">
     <div class="tmdb" id="tmdbBox">
       <h2>Actors and franchises</h2>
-      <p>IMDb's export doesn't include cast or series information. Reel Report can look each title up on TMDB, a free movie database, to fill that in. You need a free TMDB API key: create an account, then go to <a href="https://www.themoviedb.org/settings/api" target="_blank" rel="noopener">Settings → API</a> and copy the API key or the API Read Access Token.</p>
+      <p>IMDb's export doesn't include cast or series information, so Reel Report looks each title up on <a href="https://www.themoviedb.org/" target="_blank" rel="noopener">TMDB</a>, a free movie database. This starts by itself when you load your file. Only the IMDb title IDs are sent; your ratings stay in your browser.</p>
       <div class="row">
-        <input type="password" id="tmdbKey" placeholder="Paste your TMDB API key or read access token" autocomplete="off" spellcheck="false" aria-label="TMDB API key">
         <button class="btn" id="tmdbGo" type="button">Look up cast and franchises</button>
       </div>
-      <label class="check"><input type="checkbox" id="tmdbRemember"> Remember the key in this browser</label>
       <div class="prog" id="tmdbProg" hidden><i></i></div>
       <p class="status" id="tmdbStatus"></p>
     </div>
@@ -265,7 +263,7 @@ footer p { margin: 0 0 6px; max-width: 80ch; }
 </main>
 
 <footer class="wrap">
-  <p>Reel Report isn't affiliated with IMDb. Your ratings file stays in your browser. Cast and franchise lookups go directly from your browser to TMDB.</p>
+  <p>Reel Report isn't affiliated with IMDb. Your ratings file stays in your browser. Cast and franchise lookups send only IMDb title IDs to Reel Report's lookup service, which asks TMDB.</p>
   <p>This product uses the TMDB API but is not endorsed or certified by TMDB.</p>
 </footer>
 
@@ -640,7 +638,7 @@ function titleLine(t) {
 function renderGroup(key, items) {
   const g = GROUPS[key], ui = state.ui[key], el = $("#list-" + key);
   if (g.tmdb && !items.some(t => state.tmdb.titles[t.id])) {
-    el.innerHTML = `<div class="empty">Add a TMDB key in the box above to see ${g.title.toLowerCase()}.</div>`; return;
+    el.innerHTML = `<div class="empty">Click Look up cast and franchises above to see ${g.title.toLowerCase()}.</div>`; return;
   }
   let groups = groupBy(items, g.keys);
   if (!g.fixed) groups = groups.filter(x => x.n >= ui.min);
@@ -793,7 +791,11 @@ function readFile(file) {
   if (!file) return;
   const reader = new FileReader();
   reader.onload = () => {
-    try { load(String(reader.result), "file", file.name); $("#overview").scrollIntoView({ behavior: "smooth", block: "start" }); }
+    try {
+      load(String(reader.result), "file", file.name);
+      $("#overview").scrollIntoView({ behavior: "smooth", block: "start" });
+      if (lookupable().some(t => !state.tmdb.titles[t.id])) runTmdb();
+    }
     catch (e) { err.textContent = e.message; err.hidden = false; }
   };
   reader.onerror = () => { err.textContent = "The file couldn't be read. Try choosing it again."; err.hidden = false; };
@@ -826,44 +828,25 @@ document.addEventListener("click", e => {
 });
 
 /* ---------- TMDB lookups ---------- */
-const TMDB = "https://api.themoviedb.org/3";
+// Reel Report's lookup service (a Cloudflare Worker that holds the TMDB key; source in proxy/).
+const PROXY = "https://reel-report-tmdb.reelreport.workers.dev";
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 class TmdbError extends Error { constructor(msg, fatal) { super(msg); this.fatal = fatal; } }
 let tmdbRunning = false;
 
-async function tmdbGet(path, params, key) {
-  const url = new URL(TMDB + path);
-  for (const [k, v] of Object.entries(params || {})) url.searchParams.set(k, v);
-  const headers = { accept: "application/json" };
-  if (key.startsWith("eyJ")) headers.Authorization = "Bearer " + key; else url.searchParams.set("api_key", key);
-  for (let attempt = 0; attempt < 5; attempt++) {
+async function proxyGet(path) {
+  for (let attempt = 0; attempt < 4; attempt++) {
     let res;
-    try { res = await fetch(url, { headers }); }
-    catch { throw new TmdbError("Your browser couldn't connect to TMDB. If you're viewing Reel Report inside Claude, outside connections are blocked there; open a hosted copy of the page instead. Otherwise, check your connection.", true); }
-    if (res.status === 429) { await sleep(1000 * (attempt + 1)); continue; }
-    if (res.status === 401) throw new TmdbError("TMDB didn't accept that key. Check that you copied the whole API key or read access token.", true);
+    try { res = await fetch(PROXY + path); }
+    catch { throw new TmdbError("Couldn't reach the lookup service. If you're viewing Reel Report inside Claude, outside connections are blocked there; open the hosted site instead. Otherwise, check your connection and try again.", true); }
+    if (res.status === 429 || res.status >= 502) { await sleep(1200 * (attempt + 1)); continue; }
     if (res.status === 404) return null;
-    if (!res.ok) throw new TmdbError(`TMDB returned an error (${res.status}).`, false);
+    if (!res.ok) throw new TmdbError(`The lookup service isn't working right now (error ${res.status}). Try again later.`, true);
     return res.json();
   }
-  throw new TmdbError("TMDB is limiting requests right now. Wait a minute and try again.", true);
+  throw new TmdbError("The lookup service is busy. Wait a minute and try again.", true);
 }
-
-async function lookupTitle(t, key) {
-  const found = await tmdbGet(`/find/${t.id}`, { external_source: "imdb_id" }, key);
-  const mv = found?.movie_results?.[0], tv = found?.tv_results?.[0];
-  const cast = list => (list || []).slice(0, 8).map(p => [p.id, p.name]);
-  if (mv) {
-    const d = await tmdbGet(`/movie/${mv.id}`, { append_to_response: "credits" }, key);
-    const c = d?.belongs_to_collection;
-    return { c: cast(d?.credits?.cast), col: c ? [c.id, c.name] : null };
-  }
-  if (tv) {
-    const d = await tmdbGet(`/tv/${tv.id}`, { append_to_response: "aggregate_credits" }, key);
-    return { c: cast(d?.aggregate_credits?.cast), col: null };
-  }
-  return { c: [], col: null };
-}
+const lookupTitle = async t => (await proxyGet(`/title/${t.id}`)) || { c: [], col: null };
 
 async function pool(list, size, fn, onTick) {
   let i = 0, done = 0, fatal = null;
@@ -889,27 +872,24 @@ function updateTmdbStatus() {
 }
 
 async function runTmdb() {
-  const key = $("#tmdbKey").value.trim();
-  if (!key) { setStatus("Paste your TMDB key first.", true); $("#tmdbKey").focus(); return; }
-  if ($("#tmdbRemember").checked) store.set("rr.tmdb.key", key); else store.del("rr.tmdb.key");
+  if (tmdbRunning) return;
   const todo = lookupable().filter(t => !state.tmdb.titles[t.id]);
   tmdbRunning = true; $("#tmdbGo").disabled = true;
   try {
     if (todo.length) {
       setStatus(`Looking up ${todo.length} titles…`); setProgress(0);
       let sinceSave = 0;
-      await pool(todo, 8, async t => {
-        state.tmdb.titles[t.id] = await lookupTitle(t, key);
+      await pool(todo, 6, async t => {
+        state.tmdb.titles[t.id] = await lookupTitle(t);
         if (++sinceSave >= 50) { sinceSave = 0; saveTmdb(); }
       }, n => { setProgress(n / todo.length); setStatus(`Looked up ${n} of ${todo.length} titles…`); });
     }
-    const today = new Date().toISOString().slice(0, 10);
     const colIds = [...new Set(Object.values(state.tmdb.titles).map(v => v.col && String(v.col[0])).filter(Boolean))].filter(id => !state.tmdb.cols[id]);
     if (colIds.length) {
       setStatus(`Checking ${colIds.length} film series…`); setProgress(0);
-      await pool(colIds, 8, async id => {
-        const d = await tmdbGet(`/collection/${id}`, {}, key);
-        if (d) state.tmdb.cols[id] = { name: d.name, total: (d.parts || []).filter(p => p.release_date && p.release_date <= today).length };
+      await pool(colIds, 6, async id => {
+        const d = await proxyGet(`/collection/${id}`);
+        if (d) state.tmdb.cols[id] = { name: d.name, total: d.total };
       }, n => setProgress(n / colIds.length));
     }
     saveTmdb(); tmdbRunning = false; setProgress(null); updateTmdbStatus();
@@ -925,13 +905,10 @@ function buildColNames() {
   state.tmdb.titleColNames = m;
 }
 $("#tmdbGo").addEventListener("click", runTmdb);
-$("#tmdbKey").addEventListener("keydown", e => { if (e.key === "Enter") runTmdb(); });
-$("#tmdbRemember").addEventListener("change", e => { if (!e.target.checked) store.del("rr.tmdb.key"); });
 
 /* ---------- Start ---------- */
 for (const k of Object.keys(GROUPS)) sectionShell(k);
-const savedKey = store.get("rr.tmdb.key");
-if (savedKey) { $("#tmdbKey").value = savedKey; $("#tmdbRemember").checked = true; }
+store.del("rr.tmdb.key");
 buildColNames();
 load(sampleCSV(), "example");
 </script>
