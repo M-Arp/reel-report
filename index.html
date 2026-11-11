@@ -1,0 +1,940 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="description" content="See statistics on your IMDb ratings: genres, directors, actors, franchises, likes and dislikes.">
+</head>
+<body>
+<title>Reel Report</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,700;12..96,800&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap">
+<style>
+/* Layout: one reading column; an intake band on top, then a sticky filter bar over stacked analysis sections, paired two-up on wide screens. */
+:root {
+  --bg: #F4F5F8; --surface: #FFFFFF; --sunk: #E9ECF1; --ink: #141821; --muted: #596173; --line: #D9DDE5;
+  --accent: #2B52DB; --accent-soft: #DCE3FB; --on-accent: #FFFFFF; --crowd: #A9B0BE;
+  --up: #11806A; --up-soft: #D5EFE7; --down: #BF3B33; --down-soft: #F7DDDA;
+  --font-display: "Bricolage Grotesque", "Inter", "Segoe UI", system-ui, sans-serif;
+  --font-body: "Inter", "Segoe UI", system-ui, -apple-system, sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, Consolas, "Courier New", monospace;
+  --radius: 12px;
+}
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) {
+  --bg: #0D0F15; --surface: #151922; --sunk: #1C212C; --ink: #E7EAF1; --muted: #98A0B1; --line: #282E3A;
+  --accent: #7E9BFF; --accent-soft: #1E284A; --on-accent: #0A0F1F; --crowd: #4B5365;
+  --up: #4CC6A0; --up-soft: #10342A; --down: #F17F75; --down-soft: #3D1C1A; color-scheme: dark;
+} }
+:root[data-theme="dark"] {
+  --bg: #0D0F15; --surface: #151922; --sunk: #1C212C; --ink: #E7EAF1; --muted: #98A0B1; --line: #282E3A;
+  --accent: #7E9BFF; --accent-soft: #1E284A; --on-accent: #0A0F1F; --crowd: #4B5365;
+  --up: #4CC6A0; --up-soft: #10342A; --down: #F17F75; --down-soft: #3D1C1A; color-scheme: dark;
+}
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--bg); color: var(--ink); font: 15px/1.55 var(--font-body); -webkit-font-smoothing: antialiased; }
+a { color: inherit; text-decoration-color: color-mix(in srgb, currentColor 35%, transparent); text-underline-offset: 2px; }
+a:hover { color: var(--accent); }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 4px; }
+h1, h2, h3 { font-family: var(--font-display); text-wrap: balance; margin: 0; letter-spacing: -0.01em; }
+.num, .mono { font-family: var(--font-mono); font-variant-numeric: tabular-nums; }
+.muted { color: var(--muted); }
+.wrap { max-width: 1120px; margin: 0 auto; padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); }
+
+/* Intake */
+.intake { padding-block: 36px 28px; border-bottom: 1px solid var(--line); }
+.masthead { display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px 18px; margin-bottom: 22px; }
+.masthead h1 { font-size: clamp(2rem, 5vw, 2.9rem); font-weight: 800; line-height: 1; }
+.masthead p { margin: 0; color: var(--muted); font-size: 1.05rem; }
+.intake-grid { display: grid; grid-template-columns: minmax(0, 1.25fr) minmax(0, 1fr); gap: 20px; }
+@media (max-width: 820px) { .intake-grid { grid-template-columns: minmax(0, 1fr); } }
+.dz { border: 1.5px dashed var(--line); background: var(--surface); border-radius: var(--radius); padding: 22px; display: grid; gap: 14px; align-content: start; transition: border-color .15s, background .15s; }
+.dz.over { border-color: var(--accent); background: var(--accent-soft); }
+.dz h2 { font-size: 1.25rem; }
+.dz p { margin: 0; color: var(--muted); }
+.row { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; }
+.btn { font: 600 14px/1 var(--font-body); padding: 11px 16px; border-radius: 9px; border: 1px solid transparent; cursor: pointer; background: var(--accent); color: var(--on-accent); }
+.btn:hover { filter: brightness(1.07); }
+.btn.ghost { background: transparent; color: var(--ink); border-color: var(--line); }
+.btn.ghost:hover { border-color: var(--muted); filter: none; }
+.btn:disabled { opacity: .55; cursor: default; }
+.err { color: var(--down); font-weight: 500; }
+.howto { background: var(--sunk); border-radius: var(--radius); padding: 18px 20px; }
+.howto h3 { font-size: 1rem; margin-bottom: 8px; }
+.howto ol { margin: 0; padding-left: 1.2em; display: grid; gap: 6px; color: var(--muted); }
+.howto b { color: var(--ink); font-weight: 600; }
+
+/* Filter bar */
+.bar { position: sticky; top: env(safe-area-inset-top, 0px); z-index: 5; background: color-mix(in srgb, var(--bg) 92%, transparent); backdrop-filter: blur(8px); border-bottom: 1px solid var(--line); }
+body::before { content: ""; position: fixed; inset: 0 0 auto; height: env(safe-area-inset-top, 0px); z-index: 10; background: var(--bg); }
+.bar .wrap { display: flex; flex-wrap: wrap; gap: 10px 16px; align-items: center; justify-content: space-between; padding-block: 10px; }
+.source { display: flex; align-items: center; gap: 10px; min-width: 0; }
+.pill { font: 600 11px/1 var(--font-body); text-transform: uppercase; letter-spacing: .08em; padding: 6px 9px; border-radius: 999px; background: var(--accent-soft); color: var(--accent); white-space: nowrap; }
+.pill.example { background: var(--sunk); color: var(--muted); }
+.source span:last-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--muted); font-size: 14px; }
+.seg { display: inline-flex; background: var(--sunk); border-radius: 9px; padding: 3px; }
+.seg button { font: 500 13px/1 var(--font-body); border: 0; background: transparent; color: var(--muted); padding: 8px 14px; border-radius: 7px; cursor: pointer; }
+.seg button[aria-pressed="true"] { background: var(--surface); color: var(--ink); box-shadow: 0 1px 2px rgb(0 0 0 / .12); }
+
+/* Sections */
+main { padding-block: 8px 64px; }
+.panel { padding-block: 30px; border-bottom: 1px solid var(--line); min-width: 0; }
+.pair { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 0 44px; border-bottom: 1px solid var(--line); }
+.pair > .panel { border-bottom: 0; }
+@media (max-width: 900px) { .pair { grid-template-columns: minmax(0, 1fr); } .pair > .panel + .panel { border-top: 1px solid var(--line); } }
+.phead { display: flex; flex-wrap: wrap; gap: 12px 20px; align-items: flex-end; justify-content: space-between; margin-bottom: 16px; }
+.phead h2 { font-size: 1.45rem; font-weight: 700; }
+.sub { margin: 4px 0 0; color: var(--muted); font-size: 14px; max-width: 62ch; }
+.controls { display: flex; flex-wrap: wrap; gap: 8px 12px; align-items: center; font-size: 13px; color: var(--muted); }
+.controls label { display: inline-flex; align-items: center; gap: 6px; }
+select, input[type=number], input[type=password], input[type=text] { font: 14px var(--font-body); color: var(--ink); background: var(--surface); border: 1px solid var(--line); border-radius: 8px; padding: 7px 9px; }
+input[type=number] { width: 4.2em; }
+
+/* Overview */
+.tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(165px, 1fr)); gap: 1px; background: var(--line); border: 1px solid var(--line); border-radius: var(--radius); overflow: hidden; }
+.tile { background: var(--surface); padding: 16px 18px; display: grid; gap: 4px; align-content: start; }
+.tile .k { font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: .08em; color: var(--muted); }
+.tile .v { font: 700 1.9rem/1.1 var(--font-display); font-variant-numeric: tabular-nums; }
+.tile .d { font-size: 13px; color: var(--muted); }
+.notes { margin: 22px 0 0; padding: 0; list-style: none; display: grid; gap: 10px; max-width: 75ch; }
+.notes li { padding-left: 18px; position: relative; }
+.notes li::before { content: ""; position: absolute; left: 0; top: .62em; width: 7px; height: 7px; border-radius: 2px; background: var(--accent); }
+.notes b { font-weight: 600; }
+
+/* Grouped lists */
+.ghead, .grow > summary { display: grid; grid-template-columns: minmax(0, 1fr) 3.6rem minmax(96px, 10rem) 4.2rem; gap: 12px; align-items: center; }
+.ghead { font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: .08em; color: var(--muted); padding: 0 6px 8px 24px; border-bottom: 1px solid var(--line); }
+.ghead span:nth-child(n+2), .grow .n, .grow .chip-cell { text-align: right; }
+.grow > summary { list-style: none; cursor: pointer; padding: 9px 6px 9px 24px; border-bottom: 1px solid var(--line); position: relative; }
+.grow > summary::-webkit-details-marker { display: none; }
+.grow > summary::before { content: ""; position: absolute; left: 7px; top: 50%; width: 6px; height: 6px; border-right: 1.5px solid var(--muted); border-bottom: 1.5px solid var(--muted); transform: translateY(-70%) rotate(-45deg); transition: transform .15s; }
+.grow[open] > summary::before { transform: translateY(-60%) rotate(45deg); }
+.grow > summary:hover { background: var(--sunk); }
+.gname { overflow-wrap: anywhere; font-weight: 500; }
+.n { font-family: var(--font-mono); font-variant-numeric: tabular-nums; }
+.n small { color: var(--muted); font-size: 12px; }
+.meter { display: flex; align-items: center; gap: 8px; }
+.meter i { flex: 1; height: 7px; border-radius: 4px; background: var(--sunk); position: relative; overflow: hidden; }
+.meter i::after { content: ""; position: absolute; inset: 0 auto 0 0; width: var(--w); background: var(--accent); border-radius: 4px; }
+.meter b { font: 500 13px var(--font-mono); font-variant-numeric: tabular-nums; min-width: 2.2em; text-align: right; }
+.chip { display: inline-block; font: 500 12px/1 var(--font-mono); font-variant-numeric: tabular-nums; padding: 4px 6px; border-radius: 6px; background: var(--sunk); color: var(--muted); white-space: nowrap; }
+.chip.up { background: var(--up-soft); color: var(--up); }
+.chip.down { background: var(--down-soft); color: var(--down); }
+.gtitles { list-style: none; margin: 0; padding: 8px 6px 14px 24px; display: grid; gap: 2px; border-bottom: 1px solid var(--line); background: color-mix(in srgb, var(--sunk) 45%, transparent); }
+.gtitles li, .tlist li { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 12px; align-items: baseline; font-size: 14px; padding: 3px 0; }
+.gtitles .t { overflow-wrap: anywhere; }
+.gtitles .y { color: var(--muted); font-size: 13px; margin-left: 4px; }
+.scores { font: 13px var(--font-mono); font-variant-numeric: tabular-nums; color: var(--muted); white-space: nowrap; }
+.scores b { color: var(--ink); font-weight: 500; }
+.more { margin-top: 12px; }
+.empty { padding: 18px; border: 1px dashed var(--line); border-radius: var(--radius); color: var(--muted); }
+
+/* Charts */
+.chart svg { width: 100%; height: auto; display: block; overflow: visible; }
+.chart .axis { fill: var(--muted); font: 11px var(--font-mono); }
+.chart .grid { stroke: var(--line); stroke-width: 1; }
+.chart .you { fill: var(--accent); }
+.chart .crowd { fill: var(--crowd); }
+.legend { display: flex; flex-wrap: wrap; gap: 6px 16px; font-size: 13px; color: var(--muted); margin-top: 10px; }
+.legend span { display: inline-flex; align-items: center; gap: 6px; }
+.legend i { width: 10px; height: 10px; border-radius: 3px; display: inline-block; }
+
+/* Title lists */
+.lists { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 28px 44px; }
+@media (max-width: 760px) { .lists { grid-template-columns: minmax(0, 1fr); } }
+.lists h3 { font-size: 1.05rem; margin-bottom: 2px; }
+.lists .sub { margin: 0 0 10px; font-size: 13px; }
+.tlist { margin: 0; padding: 0; list-style: none; counter-reset: r; }
+.tlist li { counter-increment: r; border-bottom: 1px solid var(--line); padding: 7px 0 7px 28px; position: relative; }
+.tlist li::before { content: counter(r); position: absolute; left: 0; top: 8px; font: 12px var(--font-mono); color: var(--muted); }
+.tlist .t { font-weight: 500; overflow-wrap: anywhere; }
+.tlist .meta { display: block; font-size: 13px; color: var(--muted); }
+
+/* TMDB */
+.tmdb { background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); padding: 20px 22px; display: grid; gap: 12px; }
+.tmdb h2 { font-size: 1.25rem; }
+.tmdb p { margin: 0; color: var(--muted); max-width: 72ch; }
+.tmdb input[type=password], .tmdb input[type=text] { flex: 1 1 260px; min-width: 0; font-family: var(--font-mono); font-size: 13px; }
+.tmdb .check { display: inline-flex; gap: 6px; align-items: center; font-size: 13px; color: var(--muted); }
+.prog { height: 6px; background: var(--sunk); border-radius: 3px; overflow: hidden; }
+.prog i { display: block; height: 100%; width: 0; background: var(--accent); transition: width .2s; }
+.status { font-size: 14px; color: var(--muted); min-height: 1.4em; margin: 0; }
+
+footer { padding-block: 28px 40px; color: var(--muted); font-size: 13px; }
+footer p { margin: 0 0 6px; max-width: 80ch; }
+
+@media (max-width: 520px) {
+  .ghead, .grow > summary { grid-template-columns: minmax(0, 1fr) 2.6rem 5.4rem 3.6rem; gap: 8px; }
+  .meter i { display: none; }
+}
+@media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
+</style>
+
+<header class="intake">
+  <div class="wrap">
+    <div class="masthead">
+      <h1>Reel Report</h1>
+      <p>Statistics and patterns from your IMDb ratings.</p>
+    </div>
+    <div class="intake-grid">
+      <div class="dz" id="drop">
+        <h2>Drop your ratings file here</h2>
+        <p>Use the <span class="mono">.csv</span> file IMDb gives you when you export your ratings. It's read in this browser tab and never uploaded.</p>
+        <div class="row">
+          <button class="btn" id="pick" type="button">Choose file</button>
+          <button class="btn ghost" id="useExample" type="button">Show example data</button>
+          <input type="file" id="file" accept=".csv,text/csv" hidden>
+        </div>
+        <p class="err" id="fileErr" hidden></p>
+      </div>
+      <div class="howto">
+        <h3>Getting your ratings file from IMDb</h3>
+        <ol>
+          <li>Sign in to IMDb and open <b>Your ratings</b> from the menu under your name.</li>
+          <li>Click the <b>⋯</b> menu at the top of the list and choose <b>Export</b>.</li>
+          <li>IMDb builds the file in a minute or two and lists it on its <b>Exports</b> page. Download it from there.</li>
+          <li>Drop that file on the box here.</li>
+        </ol>
+      </div>
+    </div>
+  </div>
+</header>
+
+<div class="bar">
+  <div class="wrap">
+    <div class="source"><span class="pill example" id="srcPill">Example data</span><span id="srcText">A made-up set of 190 ratings. Load your own file to replace it.</span></div>
+    <div class="seg" role="group" aria-label="Which titles to include">
+      <button type="button" data-f="all" aria-pressed="true">Everything</button>
+      <button type="button" data-f="films" aria-pressed="false">Films</button>
+      <button type="button" data-f="tv" aria-pressed="false">TV</button>
+    </div>
+  </div>
+</div>
+
+<main class="wrap">
+  <section class="panel" id="overview">
+    <div class="tiles" id="tiles"></div>
+    <ul class="notes" id="notes"></ul>
+  </section>
+
+  <section class="panel">
+    <div class="phead"><div><h2>How you score</h2><p class="sub">Your ratings next to IMDb's average for the same titles, rounded to the nearest point.</p></div></div>
+    <div class="chart" id="distChart"></div>
+    <div class="legend"><span><i style="background:var(--accent)"></i>Your rating</span><span><i style="background:var(--crowd)"></i>IMDb average</span></div>
+  </section>
+
+  <div class="pair">
+    <section class="panel" id="sec-genres"></section>
+    <section class="panel" id="sec-directors"></section>
+  </div>
+
+  <section class="panel">
+    <div class="phead"><div><h2>Likes and dislikes</h2><p class="sub">Your favourites, your least favourites, and where you part ways with the IMDb crowd. Crowd comparisons only use titles with at least 1,000 votes.</p></div></div>
+    <div class="lists" id="lists"></div>
+  </section>
+
+  <section class="panel">
+    <div class="tmdb" id="tmdbBox">
+      <h2>Actors and franchises</h2>
+      <p>IMDb's export doesn't include cast or series information. Reel Report can look each title up on TMDB, a free movie database, to fill that in. You need a free TMDB API key: create an account, then go to <a href="https://www.themoviedb.org/settings/api" target="_blank" rel="noopener">Settings → API</a> and copy the API key or the API Read Access Token.</p>
+      <div class="row">
+        <input type="password" id="tmdbKey" placeholder="Paste your TMDB API key or read access token" autocomplete="off" spellcheck="false" aria-label="TMDB API key">
+        <button class="btn" id="tmdbGo" type="button">Look up cast and franchises</button>
+      </div>
+      <label class="check"><input type="checkbox" id="tmdbRemember"> Remember the key in this browser</label>
+      <div class="prog" id="tmdbProg" hidden><i></i></div>
+      <p class="status" id="tmdbStatus"></p>
+    </div>
+  </section>
+
+  <div class="pair">
+    <section class="panel" id="sec-actors"></section>
+    <section class="panel" id="sec-franchises"></section>
+  </div>
+
+  <div class="pair">
+    <section class="panel" id="sec-decades"></section>
+    <section class="panel" id="sec-types"></section>
+  </div>
+
+  <section class="panel">
+    <div class="phead"><div><h2>When you rated</h2><p class="sub">Titles rated each year, from the dates in your export.</p></div></div>
+    <div class="chart" id="activityChart"></div>
+  </section>
+</main>
+
+<footer class="wrap">
+  <p>Reel Report isn't affiliated with IMDb. Your ratings file stays in your browser. Cast and franchise lookups go directly from your browser to TMDB.</p>
+  <p>This product uses the TMDB API but is not endorsed or certified by TMDB.</p>
+</footer>
+
+<script>
+"use strict";
+/* ---------- Example data (made up ratings for well-known titles) ---------- */
+// [IMDb id, title, year, type (M=movie, S=series, MS=mini-series), genres, directors, runtime, IMDb rating]
+const SAMPLE = [
+["tt0111161","The Shawshank Redemption",1994,"M","Drama","Frank Darabont",142,9.3],
+["tt0068646","The Godfather",1972,"M","Crime, Drama","Francis Ford Coppola",175,9.2],
+["tt0071562","The Godfather Part II",1974,"M","Crime, Drama","Francis Ford Coppola",202,9.0],
+["tt0468569","The Dark Knight",2008,"M","Action, Crime, Drama","Christopher Nolan",152,9.0],
+["tt0050083","12 Angry Men",1957,"M","Crime, Drama","Sidney Lumet",96,9.0],
+["tt0108052","Schindler's List",1993,"M","Biography, Drama, History","Steven Spielberg",195,9.0],
+["tt0167260","The Lord of the Rings: The Return of the King",2003,"M","Action, Adventure, Drama","Peter Jackson",201,9.0],
+["tt0110912","Pulp Fiction",1994,"M","Crime, Drama","Quentin Tarantino",154,8.9],
+["tt0120737","The Lord of the Rings: The Fellowship of the Ring",2001,"M","Action, Adventure, Drama","Peter Jackson",178,8.9],
+["tt0167261","The Lord of the Rings: The Two Towers",2002,"M","Action, Adventure, Drama","Peter Jackson",179,8.8],
+["tt0060196","The Good, the Bad and the Ugly",1966,"M","Adventure, Western","Sergio Leone",178,8.8],
+["tt0109830","Forrest Gump",1994,"M","Drama, Romance","Robert Zemeckis",142,8.8],
+["tt0137523","Fight Club",1999,"M","Drama","David Fincher",139,8.8],
+["tt1375666","Inception",2010,"M","Action, Adventure, Sci-Fi","Christopher Nolan",148,8.8],
+["tt0080684","The Empire Strikes Back",1980,"M","Action, Adventure, Fantasy","Irvin Kershner",124,8.7],
+["tt0133093","The Matrix",1999,"M","Action, Sci-Fi","Lana Wachowski, Lilly Wachowski",136,8.7],
+["tt0099685","Goodfellas",1990,"M","Biography, Crime, Drama","Martin Scorsese",145,8.7],
+["tt0073486","One Flew Over the Cuckoo's Nest",1975,"M","Drama","Milos Forman",133,8.7],
+["tt0114369","Se7en",1995,"M","Crime, Drama, Mystery","David Fincher",127,8.6],
+["tt0816692","Interstellar",2014,"M","Adventure, Drama, Sci-Fi","Christopher Nolan",169,8.7],
+["tt0102926","The Silence of the Lambs",1991,"M","Crime, Drama, Thriller","Jonathan Demme",118,8.6],
+["tt0076759","Star Wars",1977,"M","Action, Adventure, Fantasy","George Lucas",121,8.6],
+["tt0120815","Saving Private Ryan",1998,"M","Drama, War","Steven Spielberg",169,8.6],
+["tt0245429","Spirited Away",2001,"M","Animation, Adventure, Family","Hayao Miyazaki",125,8.6],
+["tt0120689","The Green Mile",1999,"M","Crime, Drama, Fantasy","Frank Darabont",189,8.6],
+["tt6751668","Parasite",2019,"M","Drama, Thriller","Bong Joon Ho",132,8.5],
+["tt0482571","The Prestige",2006,"M","Drama, Mystery, Sci-Fi","Christopher Nolan",130,8.5],
+["tt0407887","The Departed",2006,"M","Crime, Drama, Thriller","Martin Scorsese",151,8.5],
+["tt0172495","Gladiator",2000,"M","Action, Adventure, Drama","Ridley Scott",155,8.5],
+["tt0088763","Back to the Future",1985,"M","Adventure, Comedy, Sci-Fi","Robert Zemeckis",116,8.5],
+["tt0078748","Alien",1979,"M","Horror, Sci-Fi","Ridley Scott",117,8.5],
+["tt0090605","Aliens",1986,"M","Action, Adventure, Sci-Fi","James Cameron",137,8.4],
+["tt0103064","Terminator 2: Judgment Day",1991,"M","Action, Sci-Fi","James Cameron",137,8.6],
+["tt0088247","The Terminator",1984,"M","Action, Sci-Fi","James Cameron",107,8.1],
+["tt0081505","The Shining",1980,"M","Drama, Horror","Stanley Kubrick",146,8.4],
+["tt0062622","2001: A Space Odyssey",1968,"M","Adventure, Sci-Fi","Stanley Kubrick",149,8.3],
+["tt0066921","A Clockwork Orange",1971,"M","Crime, Sci-Fi","Stanley Kubrick",136,8.2],
+["tt0093058","Full Metal Jacket",1987,"M","Drama, War","Stanley Kubrick",116,8.2],
+["tt0057012","Dr. Strangelove",1964,"M","Comedy, War","Stanley Kubrick",95,8.4],
+["tt0083658","Blade Runner",1982,"M","Action, Drama, Sci-Fi","Ridley Scott",117,8.1],
+["tt1856101","Blade Runner 2049",2017,"M","Action, Drama, Mystery","Denis Villeneuve",164,8.0],
+["tt2543164","Arrival",2016,"M","Drama, Mystery, Sci-Fi","Denis Villeneuve",116,7.9],
+["tt1160419","Dune",2021,"M","Action, Adventure, Drama","Denis Villeneuve",155,8.0],
+["tt15239678","Dune: Part Two",2024,"M","Action, Adventure, Drama","Denis Villeneuve",166,8.5],
+["tt1392214","Prisoners",2013,"M","Crime, Drama, Mystery","Denis Villeneuve",153,8.1],
+["tt3397884","Sicario",2015,"M","Action, Crime, Drama","Denis Villeneuve",121,7.6],
+["tt0209144","Memento",2000,"M","Mystery, Thriller","Christopher Nolan",113,8.4],
+["tt1345836","The Dark Knight Rises",2012,"M","Action, Drama","Christopher Nolan",164,8.4],
+["tt0372784","Batman Begins",2005,"M","Action, Drama","Christopher Nolan",140,8.2],
+["tt5013056","Dunkirk",2017,"M","Action, Drama, History","Christopher Nolan",106,7.8],
+["tt6723592","Tenet",2020,"M","Action, Sci-Fi, Thriller","Christopher Nolan",150,7.3],
+["tt15398776","Oppenheimer",2023,"M","Biography, Drama, History","Christopher Nolan",180,8.3],
+["tt0116282","Fargo",1996,"M","Crime, Drama, Thriller","Joel Coen, Ethan Coen",98,8.1],
+["tt0477348","No Country for Old Men",2007,"M","Crime, Drama, Thriller","Ethan Coen, Joel Coen",122,8.2],
+["tt0118715","The Big Lebowski",1998,"M","Comedy, Crime","Joel Coen, Ethan Coen",117,8.1],
+["tt0190590","O Brother, Where Art Thou?",2000,"M","Adventure, Comedy, Crime","Joel Coen, Ethan Coen",107,7.7],
+["tt0266697","Kill Bill: Vol. 1",2003,"M","Action, Crime, Thriller","Quentin Tarantino",111,8.2],
+["tt0361748","Inglourious Basterds",2009,"M","Adventure, Drama, War","Quentin Tarantino",153,8.4],
+["tt1853728","Django Unchained",2012,"M","Drama, Western","Quentin Tarantino",165,8.5],
+["tt0105236","Reservoir Dogs",1992,"M","Crime, Thriller","Quentin Tarantino",99,8.3],
+["tt7131622","Once Upon a Time in Hollywood",2019,"M","Comedy, Drama","Quentin Tarantino",161,7.6],
+["tt3460252","The Hateful Eight",2015,"M","Crime, Drama, Mystery","Quentin Tarantino",168,7.8],
+["tt0993846","The Wolf of Wall Street",2013,"M","Biography, Comedy, Crime","Martin Scorsese",180,8.2],
+["tt1130884","Shutter Island",2010,"M","Mystery, Thriller","Martin Scorsese",138,8.2],
+["tt0075314","Taxi Driver",1976,"M","Crime, Drama","Martin Scorsese",114,8.2],
+["tt1302006","The Irishman",2019,"M","Biography, Crime, Drama","Martin Scorsese",209,7.8],
+["tt0119174","The Game",1997,"M","Drama, Mystery, Thriller","David Fincher",129,7.7],
+["tt1285016","The Social Network",2010,"M","Biography, Drama","David Fincher",120,7.8],
+["tt2267998","Gone Girl",2014,"M","Drama, Mystery, Thriller","David Fincher",149,8.1],
+["tt0443706","Zodiac",2007,"M","Crime, Drama, Mystery","David Fincher",157,7.7],
+["tt0082971","Raiders of the Lost Ark",1981,"M","Action, Adventure","Steven Spielberg",115,8.4],
+["tt0087469","Indiana Jones and the Temple of Doom",1984,"M","Action, Adventure","Steven Spielberg",118,7.5],
+["tt0097576","Indiana Jones and the Last Crusade",1989,"M","Action, Adventure","Steven Spielberg",127,8.2],
+["tt0367882","Indiana Jones and the Kingdom of the Crystal Skull",2008,"M","Action, Adventure","Steven Spielberg",122,6.2],
+["tt0107290","Jurassic Park",1993,"M","Action, Adventure, Sci-Fi","Steven Spielberg",127,8.2],
+["tt0369610","Jurassic World",2015,"M","Action, Adventure, Sci-Fi","Colin Trevorrow",124,6.9],
+["tt0073195","Jaws",1975,"M","Adventure, Thriller","Steven Spielberg",124,8.1],
+["tt0264464","Catch Me If You Can",2002,"M","Biography, Crime, Drama","Steven Spielberg",141,8.1],
+["tt0371746","Iron Man",2008,"M","Action, Adventure, Sci-Fi","Jon Favreau",126,7.9],
+["tt0848228","The Avengers",2012,"M","Action, Sci-Fi","Joss Whedon",143,8.0],
+["tt2395427","Avengers: Age of Ultron",2015,"M","Action, Adventure, Sci-Fi","Joss Whedon",141,7.3],
+["tt4154756","Avengers: Infinity War",2018,"M","Action, Adventure, Sci-Fi","Anthony Russo, Joe Russo",149,8.4],
+["tt4154796","Avengers: Endgame",2019,"M","Action, Adventure, Drama","Anthony Russo, Joe Russo",181,8.4],
+["tt0458339","Captain America: The First Avenger",2011,"M","Action, Adventure, Sci-Fi","Joe Johnston",124,6.9],
+["tt1843866","Captain America: The Winter Soldier",2014,"M","Action, Adventure, Sci-Fi","Anthony Russo, Joe Russo",136,7.7],
+["tt3498820","Captain America: Civil War",2016,"M","Action, Sci-Fi","Anthony Russo, Joe Russo",147,7.8],
+["tt0478970","Ant-Man",2015,"M","Action, Adventure, Comedy","Peyton Reed",117,7.3],
+["tt5095030","Ant-Man and the Wasp",2018,"M","Action, Adventure, Comedy","Peyton Reed",118,7.0],
+["tt2015381","Guardians of the Galaxy",2014,"M","Action, Adventure, Comedy","James Gunn",121,8.0],
+["tt3896198","Guardians of the Galaxy Vol. 2",2017,"M","Action, Adventure, Comedy","James Gunn",136,7.6],
+["tt1825683","Black Panther",2018,"M","Action, Adventure, Sci-Fi","Ryan Coogler",134,7.3],
+["tt1211837","Doctor Strange",2016,"M","Action, Adventure, Fantasy","Scott Derrickson",115,7.5],
+["tt0800369","Thor",2011,"M","Action, Adventure, Fantasy","Kenneth Branagh",115,7.0],
+["tt1981115","Thor: The Dark World",2013,"M","Action, Adventure, Fantasy","Alan Taylor",112,6.8],
+["tt3501632","Thor: Ragnarok",2017,"M","Action, Adventure, Comedy","Taika Waititi",130,7.9],
+["tt10648342","Thor: Love and Thunder",2022,"M","Action, Adventure, Comedy","Taika Waititi",118,6.2],
+["tt0120338","Titanic",1997,"M","Drama, Romance","James Cameron",194,7.9],
+["tt0499549","Avatar",2009,"M","Action, Adventure, Fantasy","James Cameron",162,7.9],
+["tt0114709","Toy Story",1995,"M","Animation, Adventure, Comedy","John Lasseter",81,8.3],
+["tt0435761","Toy Story 3",2010,"M","Animation, Adventure, Comedy","Lee Unkrich",103,8.3],
+["tt0910970","WALL·E",2008,"M","Animation, Adventure, Family","Andrew Stanton",98,8.4],
+["tt2380307","Coco",2017,"M","Animation, Adventure, Comedy","Lee Unkrich, Adrian Molina",105,8.4],
+["tt0096283","My Neighbor Totoro",1988,"M","Animation, Comedy, Family","Hayao Miyazaki",86,8.1],
+["tt0119698","Princess Mononoke",1997,"M","Animation, Action, Adventure","Hayao Miyazaki",134,8.3],
+["tt0126029","Shrek",2001,"M","Animation, Adventure, Comedy","Andrew Adamson, Vicky Jenson",90,7.9],
+["tt0298148","Shrek 2",2004,"M","Animation, Adventure, Comedy","Andrew Adamson, Kelly Asbury, Conrad Vernon",93,7.3],
+["tt4633694","Spider-Man: Into the Spider-Verse",2018,"M","Animation, Action, Adventure","Bob Persichetti, Peter Ramsey, Rodney Rothman",117,8.4],
+["tt2582802","Whiplash",2014,"M","Drama, Music","Damien Chazelle",106,8.5],
+["tt3783958","La La Land",2016,"M","Comedy, Drama, Music","Damien Chazelle",128,8.0],
+["tt1798709","Her",2013,"M","Drama, Romance, Sci-Fi","Spike Jonze",126,8.0],
+["tt0338013","Eternal Sunshine of the Spotless Mind",2004,"M","Drama, Romance, Sci-Fi","Michel Gondry",108,8.3],
+["tt0180093","Requiem for a Dream",2000,"M","Drama","Darren Aronofsky",102,8.3],
+["tt0947798","Black Swan",2010,"M","Drama, Thriller","Darren Aronofsky",108,8.0],
+["tt0457430","Pan's Labyrinth",2006,"M","Drama, Fantasy, War","Guillermo del Toro",118,8.2],
+["tt5580390","The Shape of Water",2017,"M","Adventure, Drama, Fantasy","Guillermo del Toro",123,7.3],
+["tt1663202","The Revenant",2015,"M","Action, Adventure, Drama","Alejandro G. Iñárritu",156,8.0],
+["tt2562232","Birdman",2014,"M","Comedy, Drama","Alejandro G. Iñárritu",119,7.7],
+["tt0405159","Million Dollar Baby",2004,"M","Drama, Sport","Clint Eastwood",132,8.1],
+["tt0105695","Unforgiven",1992,"M","Drama, Western","Clint Eastwood",130,8.2],
+["tt1205489","Gran Torino",2008,"M","Drama","Clint Eastwood",116,8.1],
+["tt2084970","The Imitation Game",2014,"M","Biography, Drama, Thriller","Morten Tyldum",114,8.0],
+["tt1504320","The King's Speech",2010,"M","Biography, Drama, History","Tom Hooper",118,8.0],
+["tt0253474","The Pianist",2002,"M","Biography, Drama, Music","Roman Polanski",150,8.5],
+["tt0317248","Children of Men",2006,"M","Action, Drama, Sci-Fi","Alfonso Cuarón",109,7.9],
+["tt1454468","Gravity",2013,"M","Drama, Sci-Fi, Thriller","Alfonso Cuarón",91,7.7],
+["tt0241527","Harry Potter and the Sorcerer's Stone",2001,"M","Adventure, Family, Fantasy","Chris Columbus",152,7.6],
+["tt0304141","Harry Potter and the Prisoner of Azkaban",2004,"M","Adventure, Family, Fantasy","Alfonso Cuarón",142,7.9],
+["tt0417741","Harry Potter and the Half-Blood Prince",2009,"M","Action, Adventure, Family","David Yates",153,7.6],
+["tt1201607","Harry Potter and the Deathly Hallows: Part 2",2011,"M","Adventure, Family, Fantasy","David Yates",130,8.1],
+["tt0120915","Star Wars: Episode I - The Phantom Menace",1999,"M","Action, Adventure, Fantasy","George Lucas",136,6.5],
+["tt0121765","Star Wars: Episode II - Attack of the Clones",2002,"M","Action, Adventure, Fantasy","George Lucas",142,6.6],
+["tt0121766","Star Wars: Episode III - Revenge of the Sith",2005,"M","Action, Adventure, Fantasy","George Lucas",140,7.6],
+["tt0086190","Return of the Jedi",1983,"M","Action, Adventure, Fantasy","Richard Marquand",131,8.3],
+["tt2488496","Star Wars: The Force Awakens",2015,"M","Action, Adventure, Sci-Fi","J.J. Abrams",138,7.8],
+["tt2527336","Star Wars: The Last Jedi",2017,"M","Action, Adventure, Fantasy","Rian Johnson",152,6.9],
+["tt2527338","Star Wars: The Rise of Skywalker",2019,"M","Action, Adventure, Fantasy","J.J. Abrams",141,6.4],
+["tt8946378","Knives Out",2019,"M","Comedy, Crime, Drama","Rian Johnson",130,7.9],
+["tt1392190","Mad Max: Fury Road",2015,"M","Action, Adventure, Sci-Fi","George Miller",120,8.1],
+["tt0381061","Casino Royale",2006,"M","Action, Adventure, Thriller","Martin Campbell",144,8.0],
+["tt1074638","Skyfall",2012,"M","Action, Adventure, Thriller","Sam Mendes",143,7.8],
+["tt8579674","1917",2019,"M","Action, Drama, War","Sam Mendes",119,8.2],
+["tt0169547","American Beauty",1999,"M","Drama","Sam Mendes",122,8.3],
+["tt2278388","The Grand Budapest Hotel",2014,"M","Adventure, Comedy, Crime","Wes Anderson",99,8.1],
+["tt0265666","The Royal Tenenbaums",2001,"M","Comedy, Drama","Wes Anderson",110,7.6],
+["tt0432283","Fantastic Mr. Fox",2009,"M","Animation, Adventure, Comedy","Wes Anderson",87,7.9],
+["tt0211915","Amélie",2001,"M","Comedy, Romance","Jean-Pierre Jeunet",122,8.3],
+["tt0364569","Oldboy",2003,"M","Action, Drama, Mystery","Park Chan-wook",120,8.3],
+["tt5052448","Get Out",2017,"M","Horror, Mystery, Thriller","Jordan Peele",104,7.8],
+["tt6644200","A Quiet Place",2018,"M","Drama, Horror, Sci-Fi","John Krasinski",90,7.5],
+["tt7784604","Hereditary",2018,"M","Drama, Horror, Mystery","Ari Aster",127,7.3],
+["tt8772262","Midsommar",2019,"M","Drama, Horror, Mystery","Ari Aster",148,7.1],
+["tt1457767","The Conjuring",2013,"M","Horror, Mystery, Thriller","James Wan",112,7.5],
+["tt0070047","The Exorcist",1973,"M","Horror","William Friedkin",122,8.1],
+["tt0054215","Psycho",1960,"M","Horror, Mystery, Thriller","Alfred Hitchcock",109,8.5],
+["tt0052357","Vertigo",1958,"M","Mystery, Romance, Thriller","Alfred Hitchcock",128,8.3],
+["tt0047396","Rear Window",1954,"M","Mystery, Thriller","Alfred Hitchcock",112,8.5],
+["tt0034583","Casablanca",1942,"M","Drama, Romance, War","Michael Curtiz",102,8.5],
+["tt0033467","Citizen Kane",1941,"M","Drama, Mystery","Orson Welles",119,8.3],
+["tt0056172","Lawrence of Arabia",1962,"M","Adventure, Biography, Drama","David Lean",218,8.3],
+["tt0045152","Singin' in the Rain",1952,"M","Comedy, Musical, Romance","Stanley Donen, Gene Kelly",103,8.3],
+["tt0047478","Seven Samurai",1954,"M","Action, Drama","Akira Kurosawa",207,8.6],
+["tt0166924","Mulholland Drive",2001,"M","Drama, Mystery, Thriller","David Lynch",147,7.9],
+["tt0110413","Léon: The Professional",1994,"M","Action, Crime, Drama","Luc Besson",110,8.5],
+["tt0119116","The Fifth Element",1997,"M","Action, Adventure, Sci-Fi","Luc Besson",126,7.6],
+["tt0095016","Die Hard",1988,"M","Action, Thriller","John McTiernan",132,8.2],
+["tt0093773","Predator",1987,"M","Action, Adventure, Horror","John McTiernan",107,7.8],
+["tt0112573","Braveheart",1995,"M","Biography, Drama, History","Mel Gibson",178,8.3],
+["tt0113277","Heat",1995,"M","Action, Crime, Drama","Michael Mann",170,8.3],
+["tt0369339","Collateral",2004,"M","Action, Crime, Drama","Michael Mann",120,7.5],
+["tt0114814","The Usual Suspects",1995,"M","Crime, Drama, Mystery","Bryan Singer",106,8.5],
+["tt0119217","Good Will Hunting",1997,"M","Drama, Romance","Gus Van Sant",126,8.3],
+["tt0120382","The Truman Show",1998,"M","Comedy, Drama","Peter Weir",103,8.2],
+["tt0078788","Apocalypse Now",1979,"M","Drama, Mystery, War","Francis Ford Coppola",147,8.4],
+["tt0365748","Shaun of the Dead",2004,"M","Comedy, Horror","Edgar Wright",99,7.9],
+["tt0425112","Hot Fuzz",2007,"M","Action, Comedy, Mystery","Edgar Wright",121,7.8],
+["tt0117060","Mission: Impossible",1996,"M","Action, Adventure, Thriller","Brian De Palma",110,7.2],
+["tt1229238","Mission: Impossible - Ghost Protocol",2011,"M","Action, Adventure, Thriller","Brad Bird",132,7.4],
+["tt4912910","Mission: Impossible - Fallout",2018,"M","Action, Adventure, Thriller","Christopher McQuarrie",147,7.7],
+["tt0092099","Top Gun",1986,"M","Action, Drama","Tony Scott",110,6.9],
+["tt1745960","Top Gun: Maverick",2022,"M","Action, Drama","Joseph Kosinski",130,8.2],
+["tt2911666","John Wick",2014,"M","Action, Crime, Thriller","Chad Stahelski",101,7.4],
+["tt4425200","John Wick: Chapter 2",2017,"M","Action, Crime, Thriller","Chad Stahelski",122,7.4],
+["tt6146586","John Wick: Chapter 3 - Parabellum",2019,"M","Action, Crime, Thriller","Chad Stahelski",130,7.4],
+["tt0232500","The Fast and the Furious",2001,"M","Action, Crime, Thriller","Rob Cohen",106,6.8],
+["tt0903747","Breaking Bad",2008,"S","Crime, Drama, Thriller","",49,9.5],
+["tt0944947","Game of Thrones",2011,"S","Action, Adventure, Drama","",57,9.2],
+["tt0306414","The Wire",2002,"S","Crime, Drama, Thriller","",59,9.3],
+["tt0141842","The Sopranos",1999,"S","Crime, Drama","",55,9.2],
+["tt2861424","Rick and Morty",2013,"S","Animation, Adventure, Comedy","",23,9.1],
+["tt0386676","The Office",2005,"S","Comedy","",22,9.0],
+["tt4574334","Stranger Things",2016,"S","Drama, Fantasy, Horror","",51,8.6],
+["tt7366338","Chernobyl",2019,"MS","Drama, History, Thriller","",330,9.3],
+["tt3032476","Better Call Saul",2015,"S","Crime, Drama","",46,9.0],
+["tt2356777","True Detective",2014,"S","Crime, Drama, Mystery","",55,8.9],
+["tt0108778","Friends",1994,"S","Comedy, Romance","",22,8.9],
+["tt2442560","Peaky Blinders",2013,"S","Crime, Drama","",60,8.8],
+["tt0475784","Westworld",2016,"S","Drama, Mystery, Sci-Fi","",62,8.5],
+["tt7660850","Succession",2018,"S","Comedy, Drama","",60,8.8],
+["tt11280740","Severance",2022,"S","Drama, Mystery, Sci-Fi","",55,8.7],
+["tt1475582","Sherlock",2010,"S","Crime, Drama, Mystery","",88,9.1],
+["tt0098904","Seinfeld",1989,"S","Comedy","",22,8.9],
+["tt0417299","Avatar: The Last Airbender",2005,"S","Animation, Action, Adventure","",23,9.3],
+["tt5180504","The Witcher",2019,"S","Action, Adventure, Drama","",60,8.0]
+];
+
+function mulberry32(a) { return function () { a |= 0; a = a + 0x6D2B79F5 | 0; let t = Math.imul(a ^ a >>> 15, 1 | a); t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t; return ((t ^ t >>> 14) >>> 0) / 4294967296; }; }
+
+// Builds a CSV in IMDb's export format so the example goes through the same parser as a real file.
+function sampleCSV() {
+  const rnd = mulberry32(20261111);
+  const taste = { "Sci-Fi": 0.7, "Crime": 0.35, "Thriller": 0.25, "Western": 0.4, "Animation": 0.3, "War": 0.2,
+                  "Romance": -0.9, "Music": -0.8, "Musical": -1.0, "Horror": -0.7, "Comedy": -0.25, "Family": -0.3 };
+  const fixed = { tt3783958: 5, tt0118715: 6, tt6723592: 9, tt8772262: 4, tt0298148: 9, tt0120338: 5, tt0499549: 6,
+                  tt0232500: 8, tt0121765: 3, tt0120915: 4, tt2527336: 3, tt0369610: 7, tt10648342: 4, tt0033467: 6,
+                  tt0045152: 5, tt0092099: 8, tt1205489: 10, tt0119116: 9, tt0367882: 7, tt5180504: 5, tt0108778: 6 };
+  const types = { M: "Movie", S: "TV Series", MS: "TV Mini Series" };
+  const start = Date.UTC(2014, 2, 1), span = Date.UTC(2026, 9, 30) - start;
+  const q = v => /[",\n]/.test(String(v)) ? '"' + String(v).replace(/"/g, '""') + '"' : String(v);
+  const lines = ["Const,Your Rating,Date Rated,Title,Original Title,URL,Title Type,IMDb Rating,Runtime (mins),Year,Genres,Num Votes,Release Date,Directors"];
+  for (const [id, title, year, t, genres, dirs, runtime, imdb] of SAMPLE) {
+    const gs = genres.split(", ");
+    const lean = gs.reduce((s, g) => s + (taste[g] || 0), 0) / Math.sqrt(gs.length);
+    let r = Math.round(imdb - 0.45 + lean + (rnd() + rnd() + rnd() - 1.5) * 1.4);
+    r = fixed[id] || Math.max(1, Math.min(10, r));
+    const d = new Date(start + Math.pow(rnd(), 0.8) * span).toISOString().slice(0, 10);
+    const votes = Math.round(40000 + Math.pow(Math.max(0, imdb - 6), 2) * 160000 * (0.4 + rnd()));
+    lines.push([id, r, d, title, title, `https://www.imdb.com/title/${id}/`, types[t], imdb, runtime, year, genres, votes, `${year}-01-01`, dirs].map(q).join(","));
+  }
+  return lines.join("\r\n");
+}
+
+/* ---------- CSV parsing ---------- */
+function parseCSV(text) {
+  text = text.replace(/^﻿/, "");
+  const rows = []; let row = [], field = "", i = 0, inQ = false;
+  while (i < text.length) {
+    const c = text[i];
+    if (inQ) {
+      if (c === '"') { if (text[i + 1] === '"') { field += '"'; i += 2; continue; } inQ = false; i++; continue; }
+      field += c; i++; continue;
+    }
+    if (c === '"') { inQ = true; i++; continue; }
+    if (c === ",") { row.push(field); field = ""; i++; continue; }
+    if (c === "\r") { i++; continue; }
+    if (c === "\n") { row.push(field); rows.push(row); row = []; field = ""; i++; continue; }
+    field += c; i++;
+  }
+  if (field !== "" || row.length) { row.push(field); rows.push(row); }
+  return rows.filter(r => r.some(v => v.trim() !== ""));
+}
+
+const TYPE_NAMES = { movie: "Movie", tvseries: "TV Series", tvminiseries: "Mini-series", tvepisode: "Episode", tvmovie: "TV Movie",
+  short: "Short", tvshort: "Short", video: "Video", videogame: "Video Game", tvspecial: "TV Special", podcastseries: "Podcast", podcastepisode: "Podcast" };
+const FILM_TYPES = new Set(["Movie", "TV Movie", "Video", "Short"]);
+const TV_TYPES = new Set(["TV Series", "Mini-series", "Episode", "TV Special"]);
+function normType(s) { const k = String(s || "").toLowerCase().replace(/[^a-z]/g, ""); return TYPE_NAMES[k] || (s || "Other").trim(); }
+const splitList = s => (s || "").split(",").map(x => x.trim()).filter(Boolean);
+const numOrNull = s => { const n = parseFloat(String(s).replace(/,/g, "")); return Number.isFinite(n) ? n : null; };
+
+function toTitles(rows) {
+  if (!rows.length) throw new Error("That file is empty.");
+  const head = rows[0].map(h => h.trim().toLowerCase());
+  const col = name => head.indexOf(name);
+  const c = { id: col("const"), rating: col("your rating"), date: col("date rated"), title: col("title"), url: col("url"),
+    type: col("title type"), imdb: col("imdb rating"), runtime: col("runtime (mins)"), year: col("year"), genres: col("genres"),
+    votes: col("num votes"), dirs: col("directors") };
+  if (c.id < 0 || c.title < 0) throw new Error("This doesn't look like an IMDb export. The file should have Const and Title columns.");
+  if (c.rating < 0) throw new Error("This file has no Your Rating column. It may be a watchlist or list export; export from the Your ratings page instead.");
+  const out = [];
+  for (const r of rows.slice(1)) {
+    const rating = numOrNull(r[c.rating]);
+    if (rating == null || !r[c.id]) continue;
+    const id = r[c.id].trim();
+    out.push({
+      id, rating: Math.round(rating), date: c.date >= 0 ? (r[c.date] || "").trim() : "",
+      title: (r[c.title] || id).trim(), url: (c.url >= 0 && r[c.url]) ? r[c.url].trim() : `https://www.imdb.com/title/${id}/`,
+      type: normType(c.type >= 0 ? r[c.type] : "Movie"), imdb: c.imdb >= 0 ? numOrNull(r[c.imdb]) : null,
+      runtime: c.runtime >= 0 ? numOrNull(r[c.runtime]) : null, year: c.year >= 0 ? numOrNull(r[c.year]) : null,
+      genres: c.genres >= 0 ? splitList(r[c.genres]) : [], votes: c.votes >= 0 ? numOrNull(r[c.votes]) : null,
+      directors: c.dirs >= 0 ? splitList(r[c.dirs]) : []
+    });
+  }
+  if (!out.length) throw new Error("No rated titles were found in that file.");
+  return out;
+}
+
+/* ---------- Stats ---------- */
+const mean = a => a.length ? a.reduce((s, x) => s + x, 0) / a.length : null;
+function groupBy(items, keysOf) {
+  const m = new Map();
+  for (const t of items) for (const k of new Set(keysOf(t))) { if (!m.has(k)) m.set(k, []); m.get(k).push(t); }
+  return [...m].map(([name, list]) => summarize(name, list));
+}
+function summarize(name, list) {
+  const withCrowd = list.filter(t => t.imdb != null);
+  return { name, items: list, n: list.length, avg: mean(list.map(t => t.rating)),
+    crowd: mean(withCrowd.map(t => t.imdb)), diff: withCrowd.length ? mean(withCrowd.map(t => t.rating - t.imdb)) : null };
+}
+const SORTS = {
+  count: (a, b) => b.n - a.n || b.avg - a.avg,
+  high: (a, b) => b.avg - a.avg || b.n - a.n,
+  low: (a, b) => a.avg - b.avg || b.n - a.n,
+  above: (a, b) => (b.diff ?? -99) - (a.diff ?? -99) || b.n - a.n,
+  below: (a, b) => (a.diff ?? 99) - (b.diff ?? 99) || b.n - a.n
+};
+
+/* ---------- State ---------- */
+const state = { all: [], filter: "all", source: "example", fileName: "", tmdb: { titles: {}, cols: {} }, ui: {} };
+const store = {
+  get(k) { try { return JSON.parse(localStorage.getItem(k)); } catch { return null; } },
+  set(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch {} },
+  del(k) { try { localStorage.removeItem(k); } catch {} }
+};
+state.tmdb.titles = store.get("rr.tmdb.titles.v1") || {};
+state.tmdb.cols = store.get("rr.tmdb.cols.v1") || {};
+
+const $ = s => document.querySelector(s);
+const esc = s => String(s).replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+const f1 = x => x == null ? "–" : x.toFixed(1);
+const fmtInt = x => Math.round(x).toLocaleString("en-US");
+function chip(d) {
+  if (d == null) return '<span class="chip">–</span>';
+  const r = Math.round(d * 10) / 10;
+  const cls = r >= 0.3 ? "up" : r <= -0.3 ? "down" : "";
+  return `<span class="chip ${cls}" title="Your average minus IMDb's average">${r > 0 ? "+" : r < 0 ? "−" : "±"}${Math.abs(r).toFixed(1)}</span>`;
+}
+function visible() {
+  if (state.filter === "films") return state.all.filter(t => FILM_TYPES.has(t.type));
+  if (state.filter === "tv") return state.all.filter(t => TV_TYPES.has(t.type));
+  return state.all;
+}
+
+/* ---------- Grouped sections ---------- */
+const castOf = t => (state.tmdb.titles[t.id]?.c || []).map(p => p[1]);
+const colOf = t => { const c = state.tmdb.titles[t.id]?.col; return c ? [String(c[0])] : []; };
+const colName = id => (state.tmdb.cols[id]?.name || state.tmdb.titleColNames?.[id] || "Collection").replace(/ Collection$/, "");
+const GROUPS = {
+  genres: { title: "Genres", sub: "Every genre IMDb lists on a title counts, so one film can appear under several.", keys: t => t.genres, min: 1, label: "Genre" },
+  directors: { title: "Directors", sub: "Directors from your export. Raise the minimum to hide one-offs.", keys: t => t.directors, min: 2, label: "Director" },
+  actors: { title: "Actors", sub: "The top eight billed cast on each title, from TMDB.", keys: castOf, min: 3, label: "Actor", tmdb: true },
+  franchises: { title: "Franchises", sub: "Film series as TMDB groups them. Rated shows how many released entries you've rated.", keys: colOf, min: 1, label: "Series", tmdb: true,
+    name: g => colName(g.name), count: g => { const tot = state.tmdb.cols[g.name]?.total; return tot ? `${g.n}<small>/${tot}</small>` : String(g.n); }, countHead: "Rated" },
+  decades: { title: "Decades", sub: "By release year.", keys: t => t.year ? [Math.floor(t.year / 10) * 10 + "s"] : [], fixed: (a, b) => a.name.localeCompare(b.name), label: "Decade" },
+  types: { title: "Title types", sub: "How the export classifies each title.", keys: t => [t.type], fixed: SORTS.count, label: "Type" }
+};
+
+function sectionShell(key) {
+  const g = GROUPS[key];
+  state.ui[key] = { sort: "count", min: g.min, all: false };
+  const controls = g.fixed ? "" : `<div class="controls">
+      <label for="sort-${key}">Sort <select id="sort-${key}" data-g="${key}" data-k="sort">
+        <option value="count">Most titles</option><option value="high">Highest rated</option><option value="low">Lowest rated</option>
+        <option value="above">Most above IMDb</option><option value="below">Most below IMDb</option></select></label>
+      <label for="min-${key}">At least <input type="number" id="min-${key}" data-g="${key}" data-k="min" min="1" max="50" value="${g.min}"> titles</label>
+    </div>`;
+  $("#sec-" + key).innerHTML = `<div class="phead"><div><h2>${g.title}</h2><p class="sub">${g.sub}</p></div>${controls}</div><div id="list-${key}"></div>`;
+}
+
+function titleLine(t) {
+  return `<li><span class="t"><a href="${esc(t.url)}" target="_blank" rel="noopener">${esc(t.title)}</a><span class="y">${t.year ?? ""}</span></span>
+    <span class="scores">you <b>${t.rating}</b> · IMDb ${t.imdb == null ? "–" : t.imdb.toFixed(1)}</span></li>`;
+}
+
+function renderGroup(key, items) {
+  const g = GROUPS[key], ui = state.ui[key], el = $("#list-" + key);
+  if (g.tmdb && !items.some(t => state.tmdb.titles[t.id])) {
+    el.innerHTML = `<div class="empty">Add a TMDB key in the box above to see ${g.title.toLowerCase()}.</div>`; return;
+  }
+  let groups = groupBy(items, g.keys);
+  if (!g.fixed) groups = groups.filter(x => x.n >= ui.min);
+  groups.sort(g.fixed || SORTS[ui.sort]);
+  if (!groups.length) { el.innerHTML = `<div class="empty">Nothing matches. Try a lower minimum.</div>`; return; }
+  const limit = g.fixed || ui.all ? groups.length : 12;
+  const rows = groups.slice(0, limit).map(x => {
+    const list = [...x.items].sort((a, b) => b.rating - a.rating || (b.imdb ?? 0) - (a.imdb ?? 0));
+    const shown = list.slice(0, 40).map(titleLine).join("");
+    const extra = list.length > 40 ? `<li class="muted">and ${list.length - 40} more</li>` : "";
+    return `<details class="grow"><summary><span class="gname">${esc(g.name ? g.name(x) : x.name)}</span>
+      <span class="n">${g.count ? g.count(x) : x.n}</span>
+      <span class="meter" title="Your average rating"><i style="--w:${(x.avg * 10).toFixed(1)}%"></i><b>${f1(x.avg)}</b></span>
+      <span class="chip-cell">${chip(x.diff)}</span></summary><ul class="gtitles">${shown}${extra}</ul></details>`;
+  }).join("");
+  const more = !g.fixed && groups.length > 12
+    ? `<button class="btn ghost more" type="button" data-more="${key}">${ui.all ? "Show top 12" : `Show all ${groups.length}`}</button>` : "";
+  el.innerHTML = `<div class="ghead"><span>${g.label}</span><span>${g.countHead || "Titles"}</span><span>Your avg</span><span>vs IMDb</span></div>${rows}${more}`;
+}
+
+/* ---------- Overview ---------- */
+function renderOverview(items) {
+  const n = items.length;
+  const avg = mean(items.map(t => t.rating));
+  const crowdItems = items.filter(t => t.imdb != null);
+  const crowd = mean(crowdItems.map(t => t.imdb));
+  const diff = mean(crowdItems.map(t => t.rating - t.imdb));
+  const filmMins = items.filter(t => FILM_TYPES.has(t.type)).reduce((s, t) => s + (t.runtime || 0), 0);
+  const above = crowdItems.filter(t => t.rating > t.imdb).length;
+  const dates = items.map(t => t.date).filter(Boolean).sort();
+  const tiles = [
+    ["Titles rated", fmtInt(n), `${items.filter(t => FILM_TYPES.has(t.type)).length} films · ${items.filter(t => TV_TYPES.has(t.type)).length} TV`],
+    ["Your average", f1(avg), `IMDb average ${f1(crowd)} for the same titles`],
+    ["Versus the crowd", diff == null ? "–" : (diff >= 0 ? "+" : "−") + Math.abs(diff).toFixed(2), diff == null ? "" : diff >= 0 ? "points above IMDb per title" : "points below IMDb per title"],
+    ["Rated above IMDb", crowdItems.length ? Math.round(100 * above / crowdItems.length) + "%" : "–", `${above} of ${crowdItems.length} titles`],
+    ["Film hours", fmtInt(filmMins / 60), `about ${fmtInt(filmMins / 60 / 24)} days of films`],
+    ["Rating since", dates.length ? dates[0].slice(0, 4) : "–", dates.length ? `last rating ${dates[dates.length - 1]}` : "no dates in file"]
+  ];
+  $("#tiles").innerHTML = tiles.map(([k, v, d]) => `<div class="tile"><span class="k">${k}</span><span class="v">${v}</span><span class="d">${esc(d)}</span></div>`).join("");
+
+  const notes = [];
+  if (diff != null) notes.push(Math.abs(diff) < 0.15 ? `Your ratings track IMDb closely: on average you're within <b>${Math.abs(diff).toFixed(2)}</b> points of the crowd.`
+    : `You rate <b>${Math.abs(diff).toFixed(1)} points ${diff > 0 ? "above" : "below"}</b> IMDb on average, so you're ${diff > 0 ? "more generous" : "tougher"} than the crowd.`);
+  const counts = Array(11).fill(0); items.forEach(t => counts[t.rating]++);
+  const mode = counts.indexOf(Math.max(...counts));
+  notes.push(`Your most common rating is <b>${mode}</b> (${Math.round(100 * counts[mode] / n)}% of titles). You've given out <b>${counts[10]}</b> perfect 10s and <b>${counts[1] + counts[2] + counts[3]}</b> ratings of 3 or lower.`);
+  const genres = groupBy(items, t => t.genres);
+  if (genres.length) {
+    const top = [...genres].sort(SORTS.count)[0];
+    const minG = Math.max(3, Math.round(n * 0.03));
+    const qual = genres.filter(g => g.n >= minG);
+    const best = [...qual].sort(SORTS.high)[0], worst = [...qual].sort(SORTS.low)[0];
+    let s = `<b>${esc(top.name)}</b> is your most rated genre with ${top.n} titles.`;
+    if (best && worst && best !== worst) s += ` Among genres with ${minG}+ titles, you score <b>${esc(best.name)}</b> highest (${f1(best.avg)}) and <b>${esc(worst.name)}</b> lowest (${f1(worst.avg)}).`;
+    notes.push(s);
+  }
+  const dirs = groupBy(items, t => t.directors).filter(d => d.n >= 3);
+  if (dirs.length) {
+    const most = [...dirs].sort(SORTS.count)[0], fav = [...dirs].sort(SORTS.high)[0];
+    notes.push(`You've rated more films by <b>${esc(most.name)}</b> than any other director (${most.n}).` +
+      (fav !== most ? ` Of directors with 3+ titles, <b>${esc(fav.name)}</b> has your best average at ${f1(fav.avg)}.` : ` They also have your best average among directors with 3+ titles, at ${f1(fav.avg)}.`));
+  }
+  const decs = groupBy(items, GROUPS.decades.keys);
+  if (decs.length) { const d = [...decs].sort(SORTS.count)[0]; notes.push(`The <b>${d.name}</b> are your best-covered decade, with ${d.n} titles averaging ${f1(d.avg)}.`); }
+  $("#notes").innerHTML = notes.map(s => `<li>${s}</li>`).join("");
+}
+
+/* ---------- Charts ---------- */
+function niceStep(v) { const p = Math.pow(10, Math.floor(Math.log10(v))); for (const m of [1, 2, 2.5, 5, 10]) if (m * p >= v) return m * p; return 10 * p; }
+function barChart(labels, series, opts = {}) {
+  const W = 680, H = opts.h || 230, L = 40, R = 8, T = 10, B = 26;
+  const max = Math.max(1, ...series.flatMap(s => s.values));
+  const step = Math.max(1, niceStep(max / 4)), top = Math.ceil(max / step) * step;
+  const pw = W - L - R, ph = H - T - B, gw = pw / labels.length, inner = gw * 0.72, bw = inner / series.length;
+  const y = v => T + ph - (v / top) * ph;
+  let out = `<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="${esc(opts.label || "")}">`;
+  for (let v = 0; v <= top + 1e-9; v += step) out += `<line class="grid" x1="${L}" x2="${W - R}" y1="${y(v)}" y2="${y(v)}"/><text class="axis" x="${L - 8}" y="${y(v) + 4}" text-anchor="end">${fmtInt(v)}</text>`;
+  const every = Math.ceil(labels.length / 14);
+  labels.forEach((lab, i) => {
+    const x0 = L + i * gw + (gw - inner) / 2;
+    series.forEach((s, j) => {
+      const v = s.values[i], h = Math.max(0, y(0) - y(v));
+      out += `<rect class="${s.cls}" x="${(x0 + j * bw + 0.75).toFixed(1)}" y="${y(v).toFixed(1)}" width="${Math.max(1, bw - 1.5).toFixed(1)}" height="${h.toFixed(1)}" rx="2"><title>${esc(s.name)} · ${esc(lab)}: ${v}</title></rect>`;
+    });
+    if (i % every === 0) out += `<text class="axis" x="${(L + i * gw + gw / 2).toFixed(1)}" y="${H - 8}" text-anchor="middle">${esc(lab)}</text>`;
+  });
+  return out + "</svg>";
+}
+function renderCharts(items) {
+  const you = Array(10).fill(0), crowd = Array(10).fill(0);
+  for (const t of items) {
+    you[Math.min(10, Math.max(1, t.rating)) - 1]++;
+    if (t.imdb != null) crowd[Math.min(10, Math.max(1, Math.round(t.imdb))) - 1]++;
+  }
+  $("#distChart").innerHTML = barChart(["1","2","3","4","5","6","7","8","9","10"],
+    [{ name: "Your rating", cls: "you", values: you }, { name: "IMDb average", cls: "crowd", values: crowd }], { label: "Your ratings compared with IMDb averages" });
+  const years = items.map(t => +t.date.slice(0, 4)).filter(y => y > 1990);
+  if (!years.length) { $("#activityChart").innerHTML = `<div class="empty">Your file has no rating dates.</div>`; return; }
+  const lo = Math.min(...years), hi = Math.max(...years), labels = [], vals = [];
+  for (let yv = lo; yv <= hi; yv++) { labels.push(String(yv)); vals.push(years.filter(v => v === yv).length); }
+  $("#activityChart").innerHTML = barChart(labels, [{ name: "Titles rated", cls: "you", values: vals }], { label: "Titles rated per year", h: 200 });
+}
+
+/* ---------- Likes and dislikes ---------- */
+function renderLists(items) {
+  const crowd = items.filter(t => t.imdb != null && (t.votes == null || t.votes >= 1000));
+  const byRatingDesc = (a, b) => b.rating - a.rating || (b.imdb ?? 0) - (a.imdb ?? 0);
+  const lists = [
+    ["Your favourites", "Your highest ratings.", [...items].sort(byRatingDesc).slice(0, 10)],
+    ["Your least favourites", "Your lowest ratings.", [...items].sort((a, b) => a.rating - b.rating || (b.imdb ?? 0) - (a.imdb ?? 0)).slice(0, 10)],
+    ["You liked more than most", "Biggest gaps above the IMDb average.", crowd.filter(t => t.rating > t.imdb).sort((a, b) => (b.rating - b.imdb) - (a.rating - a.imdb)).slice(0, 10)],
+    ["You liked less than most", "Biggest gaps below the IMDb average.", crowd.filter(t => t.rating < t.imdb).sort((a, b) => (a.rating - a.imdb) - (b.rating - b.imdb)).slice(0, 10)]
+  ];
+  $("#lists").innerHTML = lists.map(([h, sub, list]) => `<div><h3>${h}</h3><p class="sub">${sub}</p>${list.length ? `<ol class="tlist">${list.map(t =>
+    `<li><span><a class="t" href="${esc(t.url)}" target="_blank" rel="noopener">${esc(t.title)}</a><span class="meta">${t.year ?? ""} · ${esc(t.type)}</span></span>
+      <span class="scores">you <b>${t.rating}</b> · IMDb ${t.imdb == null ? "–" : t.imdb.toFixed(1)} ${t.imdb == null ? "" : chip(t.rating - t.imdb)}</span></li>`).join("")}</ol>` : `<div class="empty">None in this selection.</div>`}</div>`).join("");
+}
+
+/* ---------- Render all ---------- */
+function render() {
+  const items = visible();
+  if (!items.length) {
+    $("#tiles").innerHTML = ""; $("#notes").innerHTML = `<li>No titles of this kind in the file. Choose Everything to see all of them.</li>`;
+    return;
+  }
+  renderOverview(items);
+  renderCharts(items);
+  renderLists(items);
+  for (const k of Object.keys(GROUPS)) renderGroup(k, items);
+}
+
+function load(text, source, fileName) {
+  const titles = toTitles(parseCSV(text));
+  state.all = titles; state.source = source; state.fileName = fileName || "";
+  const pill = $("#srcPill");
+  if (source === "example") {
+    pill.textContent = "Example data"; pill.className = "pill example";
+    $("#srcText").textContent = `A made-up set of ${titles.length} ratings. Load your own file to replace it.`;
+  } else {
+    pill.textContent = "Your ratings"; pill.className = "pill";
+    $("#srcText").textContent = `${fileName} · ${titles.length.toLocaleString("en-US")} titles`;
+  }
+  render();
+  updateTmdbStatus();
+}
+
+/* ---------- File input ---------- */
+function readFile(file) {
+  const err = $("#fileErr"); err.hidden = true;
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = () => {
+    try { load(String(reader.result), "file", file.name); $("#overview").scrollIntoView({ behavior: "smooth", block: "start" }); }
+    catch (e) { err.textContent = e.message; err.hidden = false; }
+  };
+  reader.onerror = () => { err.textContent = "The file couldn't be read. Try choosing it again."; err.hidden = false; };
+  reader.readAsText(file);
+}
+$("#pick").addEventListener("click", () => $("#file").click());
+$("#file").addEventListener("change", e => { readFile(e.target.files[0]); e.target.value = ""; });
+$("#useExample").addEventListener("click", () => { $("#fileErr").hidden = true; load(sampleCSV(), "example"); });
+const dz = $("#drop");
+["dragenter", "dragover"].forEach(ev => document.addEventListener(ev, e => { e.preventDefault(); dz.classList.add("over"); }));
+["dragleave", "drop"].forEach(ev => document.addEventListener(ev, e => { e.preventDefault(); if (ev === "drop" || !e.relatedTarget) dz.classList.remove("over"); }));
+document.addEventListener("drop", e => readFile(e.dataTransfer?.files?.[0]));
+
+/* ---------- Filter and section controls ---------- */
+document.querySelectorAll(".seg button").forEach(b => b.addEventListener("click", () => {
+  state.filter = b.dataset.f;
+  document.querySelectorAll(".seg button").forEach(x => x.setAttribute("aria-pressed", String(x === b)));
+  render();
+}));
+document.addEventListener("change", e => {
+  const g = e.target.dataset?.g; if (!g) return;
+  const ui = state.ui[g];
+  if (e.target.dataset.k === "sort") ui.sort = e.target.value;
+  if (e.target.dataset.k === "min") ui.min = Math.max(1, Math.min(50, parseInt(e.target.value, 10) || 1));
+  renderGroup(g, visible());
+});
+document.addEventListener("click", e => {
+  const k = e.target.dataset?.more; if (!k) return;
+  state.ui[k].all = !state.ui[k].all; renderGroup(k, visible());
+});
+
+/* ---------- TMDB lookups ---------- */
+const TMDB = "https://api.themoviedb.org/3";
+const sleep = ms => new Promise(r => setTimeout(r, ms));
+class TmdbError extends Error { constructor(msg, fatal) { super(msg); this.fatal = fatal; } }
+let tmdbRunning = false;
+
+async function tmdbGet(path, params, key) {
+  const url = new URL(TMDB + path);
+  for (const [k, v] of Object.entries(params || {})) url.searchParams.set(k, v);
+  const headers = { accept: "application/json" };
+  if (key.startsWith("eyJ")) headers.Authorization = "Bearer " + key; else url.searchParams.set("api_key", key);
+  for (let attempt = 0; attempt < 5; attempt++) {
+    let res;
+    try { res = await fetch(url, { headers }); }
+    catch { throw new TmdbError("Your browser couldn't connect to TMDB. If you're viewing Reel Report inside Claude, outside connections are blocked there; open a hosted copy of the page instead. Otherwise, check your connection.", true); }
+    if (res.status === 429) { await sleep(1000 * (attempt + 1)); continue; }
+    if (res.status === 401) throw new TmdbError("TMDB didn't accept that key. Check that you copied the whole API key or read access token.", true);
+    if (res.status === 404) return null;
+    if (!res.ok) throw new TmdbError(`TMDB returned an error (${res.status}).`, false);
+    return res.json();
+  }
+  throw new TmdbError("TMDB is limiting requests right now. Wait a minute and try again.", true);
+}
+
+async function lookupTitle(t, key) {
+  const found = await tmdbGet(`/find/${t.id}`, { external_source: "imdb_id" }, key);
+  const mv = found?.movie_results?.[0], tv = found?.tv_results?.[0];
+  const cast = list => (list || []).slice(0, 8).map(p => [p.id, p.name]);
+  if (mv) {
+    const d = await tmdbGet(`/movie/${mv.id}`, { append_to_response: "credits" }, key);
+    const c = d?.belongs_to_collection;
+    return { c: cast(d?.credits?.cast), col: c ? [c.id, c.name] : null };
+  }
+  if (tv) {
+    const d = await tmdbGet(`/tv/${tv.id}`, { append_to_response: "aggregate_credits" }, key);
+    return { c: cast(d?.aggregate_credits?.cast), col: null };
+  }
+  return { c: [], col: null };
+}
+
+async function pool(list, size, fn, onTick) {
+  let i = 0, done = 0, fatal = null;
+  const worker = async () => {
+    while (i < list.length && !fatal) {
+      const item = list[i++];
+      try { await fn(item); } catch (e) { if (e.fatal) fatal = e; }
+      onTick(++done);
+    }
+  };
+  await Promise.all(Array.from({ length: Math.min(size, list.length) }, worker));
+  if (fatal) throw fatal;
+}
+
+function saveTmdb() { store.set("rr.tmdb.titles.v1", state.tmdb.titles); store.set("rr.tmdb.cols.v1", state.tmdb.cols); }
+function setProgress(frac) { const p = $("#tmdbProg"); p.hidden = frac == null; if (frac != null) p.firstElementChild.style.width = (frac * 100).toFixed(1) + "%"; }
+function setStatus(msg, isErr) { const s = $("#tmdbStatus"); s.textContent = msg; s.classList.toggle("err", !!isErr); }
+function lookupable() { return state.all.filter(t => !["Episode", "Video Game", "Podcast"].includes(t.type)); }
+function updateTmdbStatus() {
+  if (tmdbRunning) return;
+  const all = lookupable(), have = all.filter(t => state.tmdb.titles[t.id]).length;
+  setStatus(have ? `Cast and series data saved for ${have} of ${all.length} titles.${have < all.length ? " Look up again to fill in the rest." : ""}` : "");
+}
+
+async function runTmdb() {
+  const key = $("#tmdbKey").value.trim();
+  if (!key) { setStatus("Paste your TMDB key first.", true); $("#tmdbKey").focus(); return; }
+  if ($("#tmdbRemember").checked) store.set("rr.tmdb.key", key); else store.del("rr.tmdb.key");
+  const todo = lookupable().filter(t => !state.tmdb.titles[t.id]);
+  tmdbRunning = true; $("#tmdbGo").disabled = true;
+  try {
+    if (todo.length) {
+      setStatus(`Looking up ${todo.length} titles…`); setProgress(0);
+      let sinceSave = 0;
+      await pool(todo, 8, async t => {
+        state.tmdb.titles[t.id] = await lookupTitle(t, key);
+        if (++sinceSave >= 50) { sinceSave = 0; saveTmdb(); }
+      }, n => { setProgress(n / todo.length); setStatus(`Looked up ${n} of ${todo.length} titles…`); });
+    }
+    const today = new Date().toISOString().slice(0, 10);
+    const colIds = [...new Set(Object.values(state.tmdb.titles).map(v => v.col && String(v.col[0])).filter(Boolean))].filter(id => !state.tmdb.cols[id]);
+    if (colIds.length) {
+      setStatus(`Checking ${colIds.length} film series…`); setProgress(0);
+      await pool(colIds, 8, async id => {
+        const d = await tmdbGet(`/collection/${id}`, {}, key);
+        if (d) state.tmdb.cols[id] = { name: d.name, total: (d.parts || []).filter(p => p.release_date && p.release_date <= today).length };
+      }, n => setProgress(n / colIds.length));
+    }
+    saveTmdb(); tmdbRunning = false; setProgress(null); updateTmdbStatus();
+  } catch (e) {
+    saveTmdb(); tmdbRunning = false; setProgress(null); setStatus(e.message, true);
+  } finally {
+    tmdbRunning = false; $("#tmdbGo").disabled = false; buildColNames(); render();
+  }
+}
+// Collection names from per-title lookups, used until the collection itself has been fetched.
+function buildColNames() {
+  const m = {}; for (const v of Object.values(state.tmdb.titles)) if (v.col) m[String(v.col[0])] = v.col[1];
+  state.tmdb.titleColNames = m;
+}
+$("#tmdbGo").addEventListener("click", runTmdb);
+$("#tmdbKey").addEventListener("keydown", e => { if (e.key === "Enter") runTmdb(); });
+$("#tmdbRemember").addEventListener("change", e => { if (!e.target.checked) store.del("rr.tmdb.key"); });
+
+/* ---------- Start ---------- */
+for (const k of Object.keys(GROUPS)) sectionShell(k);
+const savedKey = store.get("rr.tmdb.key");
+if (savedKey) { $("#tmdbKey").value = savedKey; $("#tmdbRemember").checked = true; }
+buildColNames();
+load(sampleCSV(), "example");
+</script>
+
+</body>
+</html>
