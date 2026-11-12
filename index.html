@@ -255,11 +255,6 @@ footer p { margin: 0 0 6px; max-width: 80ch; }
     <section class="panel" id="sec-decades"></section>
     <section class="panel" id="sec-types"></section>
   </div>
-
-  <section class="panel">
-    <div class="phead"><div><h2>When you rated</h2><p class="sub">Titles rated each year, from the dates in your export.</p></div></div>
-    <div class="chart" id="activityChart"></div>
-  </section>
 </main>
 
 <footer class="wrap">
@@ -735,11 +730,6 @@ function renderCharts(items) {
   }
   $("#distChart").innerHTML = barChart(["1","2","3","4","5","6","7","8","9","10"],
     [{ name: "Your rating", cls: "you", values: you }, { name: "IMDb average", cls: "crowd", values: crowd }], { label: "Your ratings compared with IMDb averages" });
-  const years = items.map(t => +t.date.slice(0, 4)).filter(y => y > 1990);
-  if (!years.length) { $("#activityChart").innerHTML = `<div class="empty">Your file has no rating dates.</div>`; return; }
-  const lo = Math.min(...years), hi = Math.max(...years), labels = [], vals = [];
-  for (let yv = lo; yv <= hi; yv++) { labels.push(String(yv)); vals.push(years.filter(v => v === yv).length); }
-  $("#activityChart").innerHTML = barChart(labels, [{ name: "Titles rated", cls: "you", values: vals }], { label: "Titles rated per year", h: 200 });
 }
 
 /* ---------- Likes and dislikes ---------- */
