@@ -794,7 +794,7 @@ function renderLists(items) {
 }
 function titleLists(lists) {
   return lists.map(([h, sub, list]) => `<div><h3>${h}</h3><p class="sub">${sub}</p>${list.length ? `<ol class="tlist">${list.map(t =>
-    `<li><span><a class="t" href="${esc(t.url)}" target="_blank" rel="noopener">${esc(t.title)}</a><span class="meta">${t.year ?? ""} · ${esc(t.type)}</span></span>
+    `<li><span><a class="t" href="${esc(t.url)}" target="_blank" rel="noopener">${esc(t.title)}</a><span class="meta">${[t.year, (t.genres || []).slice(0, 3).join(", ") || t.type].filter(Boolean).map(esc).join(" · ")}</span></span>
       <span class="scores">you <b>${t.rating}</b> · IMDb ${t.imdb == null ? "–" : t.imdb.toFixed(1)} ${t.imdb == null ? "" : chip(t.rating - t.imdb)}</span></li>`).join("")}</ol>` : `<div class="empty">None in this selection.</div>`}</div>`).join("");
 }
 
