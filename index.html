@@ -135,8 +135,6 @@ input[type=number] { width: 4.2em; }
 /* Title lists */
 .lists { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 28px 44px; }
 @media (max-width: 760px) { .lists { grid-template-columns: minmax(0, 1fr); } }
-.lists.stack { grid-template-columns: minmax(0, 1fr); }
-.gintro { margin: 0 0 16px; font-size: 15px; }
 .lists h3 { font-size: 1.05rem; margin-bottom: 2px; }
 .lists .sub { margin: 0 0 10px; font-size: 13px; }
 .tlist { margin: 0; padding: 0; list-style: none; counter-reset: r; }
@@ -222,14 +220,6 @@ footer p { margin: 0 0 6px; max-width: 80ch; }
     <div class="lists" id="lists"></div>
   </section>
 
-  <div class="pair">
-    <section class="panel" id="sec-popularity"></section>
-    <section class="panel">
-      <div class="phead"><div><h2>Off the beaten path</h2><p class="sub">Your taste against how many people have rated each title on IMDb.</p></div></div>
-      <div class="lists stack" id="popLists"></div>
-    </section>
-  </div>
-
   <section class="panel">
     <div class="tmdb" id="tmdbBox">
       <h2>Actors and franchises</h2>
@@ -247,10 +237,7 @@ footer p { margin: 0 0 6px; max-width: 80ch; }
     <section class="panel" id="sec-franchises"></section>
   </div>
 
-  <div class="pair">
-    <section class="panel" id="sec-decades"></section>
-    <section class="panel" id="sec-types"></section>
-  </div>
+  <section class="panel" id="sec-decades"></section>
 </main>
 
 <footer class="wrap">
@@ -595,31 +582,6 @@ function visible() {
   return state.all;
 }
 
-/* ---------- Popularity (IMDb vote counts) ---------- */
-// [minimum votes, row label, phrase used in sentences]
-const VOTE_BANDS = [[1e6, "1M or more", "1M+ votes"], [250e3, "250k–1M", "250k–1M votes"], [50e3, "50k–250k", "50k–250k votes"],
-  [10e3, "10k–50k", "10k–50k votes"], [0, "Under 10k", "under 10k votes"]];
-const voteBand = v => VOTE_BANDS.find(([m]) => v >= m);
-const bandIndex = label => VOTE_BANDS.findIndex(b => b[1] === label);
-const popular = t => t.votes != null && t.type !== "Episode";
-function fmtVotes(v) {
-  if (v >= 1e6) return (v / 1e6).toFixed(v >= 1e7 ? 0 : 1).replace(/\.0$/, "") + "M";
-  if (v >= 1e3) return Math.round(v / 1e3) + "k";
-  return String(Math.round(v));
-}
-function popIntro(groups, items) {
-  const votes = items.filter(popular).map(t => t.votes).sort((a, b) => a - b);
-  if (!votes.length) return "";
-  const mid = votes.length % 2 ? votes[(votes.length - 1) / 2] : (votes[votes.length / 2 - 1] + votes[votes.length / 2]) / 2;
-  let s = `Half the titles you've rated have more than <b>${fmtVotes(mid)}</b> IMDb votes.`;
-  const big = groups.filter(g => g.n >= 3);
-  if (big.length >= 2) {
-    const hi = big[0], lo = big[big.length - 1], ph = name => VOTE_BANDS[bandIndex(name)][2];
-    s += ` You average <b>${f1(hi.avg)}</b> on the most popular (${ph(hi.name)}) and <b>${f1(lo.avg)}</b> on the least known (${ph(lo.name)}).`;
-  }
-  return s;
-}
-
 /* ---------- Grouped sections ---------- */
 const castOf = t => (state.tmdb.titles[t.id]?.c || []).map(p => p[1]);
 const colOf = t => { const c = state.tmdb.titles[t.id]?.col; return c ? [String(c[0])] : []; };
@@ -630,10 +592,7 @@ const GROUPS = {
   actors: { title: "Actors", sub: "The top eight billed cast on each title, from TMDB.", keys: castOf, min: 3, label: "Actor", tmdb: true },
   franchises: { title: "Franchises", sub: "Film series as TMDB groups them. Rated shows how many released entries you've rated.", keys: colOf, min: 1, label: "Series", tmdb: true,
     name: g => colName(g.name), count: g => { const tot = state.tmdb.cols[g.name]?.total; return tot ? `${g.n}<small>/${tot}</small>` : String(g.n); }, countHead: "Rated" },
-  popularity: { title: "Mainstream or obscure", sub: "Titles grouped by how many people have rated them on IMDb. Episodes are left out.",
-    keys: t => popular(t) ? [voteBand(t.votes)[1]] : [], fixed: (a, b) => bandIndex(a.name) - bandIndex(b.name), label: "IMDb votes", intro: popIntro },
-  decades: { title: "Decades", sub: "By release year.", keys: t => t.year ? [Math.floor(t.year / 10) * 10 + "s"] : [], fixed: (a, b) => a.name.localeCompare(b.name), label: "Decade" },
-  types: { title: "Title types", sub: "How the export classifies each title.", keys: t => [t.type], fixed: SORTS.count, label: "Type" }
+  decades: { title: "Decades", sub: "By release year.", keys: t => t.year ? [Math.floor(t.year / 10) * 10 + "s"] : [], fixed: (a, b) => a.name.localeCompare(b.name), label: "Decade" }
 };
 
 function sectionShell(key) {
@@ -674,7 +633,7 @@ function renderGroup(key, items) {
   }).join("");
   const more = !g.fixed && groups.length > 12
     ? `<button class="btn ghost more" type="button" data-more="${key}">${ui.all ? "Show top 12" : `Show all ${groups.length}`}</button>` : "";
-  el.innerHTML = `${g.intro ? `<p class="gintro">${g.intro(groups, items)}</p>` : ""}<div class="ghead"><span>${g.label}</span><span>${g.countHead || "Titles"}</span><span>Your avg</span><span>vs IMDb</span></div>${rows}${more}`;
+  el.innerHTML = `<div class="ghead"><span>${g.label}</span><span>${g.countHead || "Titles"}</span><span>Your avg</span><span>vs IMDb</span></div>${rows}${more}`;
 }
 
 /* ---------- Overview ---------- */
@@ -733,17 +692,10 @@ function renderLists(items) {
     ["You liked less than most", "Biggest gaps below the IMDb average.", crowd.filter(t => t.rating < t.imdb).sort((a, b) => (a.rating - a.imdb) - (b.rating - b.imdb)).slice(0, 10)]
   ];
   $("#lists").innerHTML = titleLists(lists);
-  const pop = items.filter(popular);
-  $("#popLists").innerHTML = titleLists([
-    ["Hidden favourites", "Titles you rated 8 or higher that the fewest people have rated.",
-      pop.filter(t => t.rating >= 8).sort((a, b) => a.votes - b.votes || b.rating - a.rating).slice(0, 6)],
-    ["Big hits you didn't love", "The most-rated titles on IMDb that you gave 6 or lower.",
-      pop.filter(t => t.rating <= 6).sort((a, b) => b.votes - a.votes || a.rating - b.rating).slice(0, 6)]
-  ], true);
 }
-function titleLists(lists, showVotes) {
+function titleLists(lists) {
   return lists.map(([h, sub, list]) => `<div><h3>${h}</h3><p class="sub">${sub}</p>${list.length ? `<ol class="tlist">${list.map(t =>
-    `<li><span><a class="t" href="${esc(t.url)}" target="_blank" rel="noopener">${esc(t.title)}</a><span class="meta">${t.year ?? ""} · ${esc(t.type)}${showVotes && t.votes != null ? ` · ${fmtVotes(t.votes)} votes` : ""}</span></span>
+    `<li><span><a class="t" href="${esc(t.url)}" target="_blank" rel="noopener">${esc(t.title)}</a><span class="meta">${t.year ?? ""} · ${esc(t.type)}</span></span>
       <span class="scores">you <b>${t.rating}</b> · IMDb ${t.imdb == null ? "–" : t.imdb.toFixed(1)} ${t.imdb == null ? "" : chip(t.rating - t.imdb)}</span></li>`).join("")}</ol>` : `<div class="empty">None in this selection.</div>`}</div>`).join("");
 }
 
