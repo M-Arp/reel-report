@@ -102,6 +102,25 @@ input[type=number] { width: 4.2em; }
 @media (max-width: 640px) { .tiles { grid-template-columns: repeat(2, minmax(0, 1fr)); } .tile .v.name { font-size: 1.15rem; } }
 .tile .d { font-size: 13px; color: var(--muted); }
 
+/* Persona */
+.persona { margin-bottom: 18px; border-radius: var(--radius); padding: 26px 28px 28px; display: grid; gap: 8px; justify-items: start;
+  background: linear-gradient(135deg, var(--p1), var(--p2)); color: var(--pink); position: relative; overflow: hidden; isolation: isolate; }
+.persona[hidden] { display: none; }
+.persona::after { content: ""; position: absolute; z-index: -1; right: -70px; top: -90px; width: 280px; height: 280px; border-radius: 50%; background: var(--pacc); opacity: .16; }
+.persona .pk { font: 600 11px/1 var(--font-body); text-transform: uppercase; letter-spacing: .14em; opacity: .85; }
+.persona h2 { font-size: clamp(1.9rem, 5vw, 3.1rem); font-weight: 800; line-height: 1.02; letter-spacing: -0.02em; max-width: 22ch; }
+.persona .pl { margin: 2px 0 0; font-size: 1.05rem; max-width: 60ch; }
+.persona .pw { margin: 0; font-size: 13px; opacity: .82; max-width: 75ch; }
+.persona .btn { margin-top: 8px; background: var(--pink); color: var(--p1); }
+.sharedlg { border: 0; border-radius: var(--radius); padding: 18px; background: var(--surface); color: var(--ink); width: min(420px, calc(100vw - 32px)); max-height: calc(100dvh - 32px); }
+.sharedlg::backdrop { background: rgb(0 0 0 / .6); }
+.sharedlg .sd-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; }
+.sharedlg h2 { font-size: 1.15rem; }
+.sharedlg .x { border: 0; background: transparent; color: var(--muted); font-size: 26px; line-height: 1; cursor: pointer; padding: 2px 6px; }
+.sharedlg img { display: block; width: auto; max-width: 100%; height: min(62dvh, 640px); aspect-ratio: 9 / 16; object-fit: contain; margin: 0 auto 14px; border-radius: 10px; background: var(--sunk); }
+.sharedlg .row { justify-content: center; }
+.sharedlg .status { text-align: center; margin-top: 8px; }
+
 /* Grouped lists */
 .ghead, .grow > summary { display: grid; grid-template-columns: minmax(0, 1fr) 3.6rem minmax(96px, 10rem) 4.2rem; gap: 12px; align-items: center; }
 .ghead { font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: .08em; color: var(--muted); padding: 0 6px 8px 24px; border-bottom: 1px solid var(--line); }
@@ -217,6 +236,7 @@ footer p { margin: 0 0 6px; max-width: 80ch; }
 
 <main class="wrap">
   <section class="panel" id="overview">
+    <div class="persona" id="persona" hidden></div>
     <div class="tiles" id="tiles"></div>
   </section>
 
@@ -246,6 +266,17 @@ footer p { margin: 0 0 6px; max-width: 80ch; }
     <div id="recs"></div>
   </section>
 </main>
+
+<dialog class="sharedlg" id="shareDlg" aria-labelledby="shareTitle">
+  <div class="sd-head"><h2 id="shareTitle">Your share card</h2><button class="x" type="button" id="shareClose" aria-label="Close">×</button></div>
+  <img id="shareImg" alt="">
+  <div class="row">
+    <button class="btn" type="button" id="shareNative" hidden>Share</button>
+    <button class="btn ghost" type="button" id="shareDl">Download image</button>
+    <button class="btn ghost" type="button" id="shareCopy" hidden>Copy image</button>
+  </div>
+  <p class="status" id="shareMsg" role="status"></p>
+</dialog>
 
 <footer class="wrap">
   <p>Reel Report isn't affiliated with IMDb. Your ratings file stays in your browser. TMDB lookups send only IMDb title IDs to Reel Report's lookup service, which asks TMDB.</p>
@@ -780,6 +811,297 @@ function renderRecs() {
   }).join("")}</ol>`;
 }
 
+/* ---------- Persona ---------- */
+// A two-part nickname from the titles you rate highest: an adjective from how old, how popular, how acclaimed
+// or how long they are, and a noun from the genres that show up more in them than in everything you rate.
+const PALETTES = {
+  noir:    { bg: ["#1A1A22", "#3A2A1A"], ink: "#F7EBD8", accent: "#F2B33D" },
+  space:   { bg: ["#140F3A", "#0E4B6B"], ink: "#EAF2FF", accent: "#5EE6E0" },
+  mystery: { bg: ["#0F2E2E", "#1D4A3A"], ink: "#EAFBF0", accent: "#B8F05A" },
+  dread:   { bg: ["#0B0A0C", "#4A0C12"], ink: "#F7E6E6", accent: "#FF4B4B" },
+  sunny:   { bg: ["#FFC93C", "#FF7A45"], ink: "#1E1406", accent: "#1E1406" },
+  rose:    { bg: ["#C9305F", "#7A0F3D"], ink: "#FFF4F7", accent: "#FFE066" },
+  plum:    { bg: ["#3B1C4A", "#8E3B5E"], ink: "#FCEFF5", accent: "#FFB4C8" },
+  forest:  { bg: ["#123524", "#3D5A1E"], ink: "#F3F7E8", accent: "#F5C542" },
+  blast:   { bg: ["#B3201B", "#C9480E"], ink: "#FFF6EC", accent: "#FFE14D" },
+  archive: { bg: ["#14213D", "#3B4E6B"], ink: "#F5EEDC", accent: "#E9C46A" },
+  dust:    { bg: ["#6B3410", "#A85F22"], ink: "#FFF3E2", accent: "#F4C27A" },
+  toon:    { bg: ["#2563EB", "#6D28D9"], ink: "#FFFFFF", accent: "#FFBE0B" },
+  stage:   { bg: ["#B5179E", "#560BAD"], ink: "#FFF0FB", accent: "#4CC9F0" }
+};
+// {items} becomes "films" or "shows".
+const NOUNS = {
+  antihero:  { name: "Antihero Apologist", line: "You'll root for the bad guy if the writing's good enough.", pal: "noir" },
+  crime:     { name: "Heist Planner", line: "Give you a crew, a plan and a double-cross and you're set.", pal: "noir" },
+  twist:     { name: "Twist Hunter", line: "You live for the reveal you didn't see coming.", pal: "mystery" },
+  detective: { name: "Armchair Detective", line: "You've usually cracked it before the big reveal.", pal: "mystery" },
+  nails:     { name: "Nail-Biter", line: "You like your {items} tense and your nails short.", pal: "mystery" },
+  mind:      { name: "Mind-Bender", line: "If you need a diagram afterwards, it was a good one.", pal: "space" },
+  star:      { name: "Stargazer", line: "Spaceships, time loops, big ideas: the stranger the better.", pal: "space" },
+  quest:     { name: "Quest Seeker", line: "Maps, magic and a long way from home.", pal: "forest" },
+  realm:     { name: "Realm Walker", line: "You'll take another world over this one any day.", pal: "forest" },
+  thrill:    { name: "Thrill Seeker", line: "Big set pieces, bigger stakes, no time to breathe.", pal: "blast" },
+  adrenaline:{ name: "Adrenaline Junkie", line: "Car chases, explosions, one-liners. No notes.", pal: "blast" },
+  night:     { name: "Night Owl", line: "Lights off, volume up, sleep optional.", pal: "dread" },
+  laugh:     { name: "Laugh Chaser", line: "If it doesn't make you laugh, what's the point?", pal: "sunny" },
+  dramedy:   { name: "Dramedy Devotee", line: "You want to laugh and cry, ideally in the same scene.", pal: "sunny" },
+  romcom:    { name: "Rom-Com Royalty", line: "Meet-cutes, mix-ups and a happy ending, please.", pal: "rose" },
+  romantic:  { name: "Hopeless Romantic", line: "You're here for the slow burn and the grand gesture.", pal: "rose" },
+  heart:     { name: "Heartstring Collector", line: "You want to feel something, and you usually do.", pal: "plum" },
+  truestory: { name: "True-Story Junkie", line: "Based on a true story? You're in.", pal: "archive" },
+  history:   { name: "History Buff", line: "You like your stories with footnotes.", pal: "archive" },
+  war:       { name: "War Correspondent", line: "Big battles, bigger stakes, no easy answers.", pal: "archive" },
+  truth:     { name: "Truth Seeker", line: "Real life is stranger than fiction, and you've got proof.", pal: "archive" },
+  kid:       { name: "Kid at Heart", line: "You know animation was never just for kids.", pal: "toon" },
+  frontier:  { name: "Frontier Drifter", line: "Dust, horses and a long stare at the horizon.", pal: "dust" },
+  show:      { name: "Showstopper", line: "You like it louder, with a soundtrack.", pal: "stage" },
+  underdog:  { name: "Underdog Cheerleader", line: "You're always rooting for the comeback.", pal: "blast" },
+  reality:   { name: "Reality Junkie", line: "Unscripted, unfiltered, unmissable.", pal: "rose" }
+};
+const GENRE_NOUN = { Crime: "crime", Thriller: "nails", Mystery: "detective", "Sci-Fi": "star", Fantasy: "realm", Adventure: "quest",
+  Action: "adrenaline", Horror: "night", Comedy: "laugh", Romance: "romantic", Drama: "heart", Biography: "truestory", History: "history",
+  War: "war", Documentary: "truth", News: "truth", Animation: "kid", Family: "kid", Western: "frontier", Music: "show", Musical: "show",
+  Sport: "underdog", "Film-Noir": "crime", "Reality-TV": "reality", "Game-Show": "reality", "Talk-Show": "reality" };
+const PAIR_NOUN = [[["Crime", "Drama"], "antihero"], [["Mystery", "Thriller"], "twist"], [["Crime", "Mystery"], "detective"],
+  [["Sci-Fi", "Thriller"], "mind"], [["Sci-Fi", "Mystery"], "mind"], [["Action", "Adventure"], "thrill"], [["Adventure", "Fantasy"], "quest"],
+  [["Comedy", "Romance"], "romcom"], [["Comedy", "Drama"], "dramedy"], [["Drama", "Romance"], "romantic"], [["Horror", "Thriller"], "night"],
+  [["Biography", "Drama"], "truestory"], [["Drama", "History"], "history"], [["Drama", "War"], "war"], [["Action", "Sci-Fi"], "star"]];
+
+// {items}: "films" / "shows"; {item}: "film" / "show".
+const MODS = [
+  { key: "golden", name: "Golden-Age", line: "Bonus points if it's older than your parents.",
+    s: c => c.year != null && c.year <= 1970 ? 1 + (1970 - c.year) / 15 : 0, why: c => `your favourites' median year is ${c.year}` },
+  { key: "oldschool", name: "Old-School", line: "They really don't make them like they used to.",
+    s: c => c.year != null && c.year > 1970 && c.year <= 1992 ? 1 + (1992 - c.year) / 12 : 0, why: c => `your favourites' median year is ${c.year}` },
+  { key: "fresh", name: "Cutting-Edge", line: "If it came out this year, you've probably seen it already.",
+    s: c => c.year != null && c.year >= c.now - 6 ? 1 + (c.year - (c.now - 6)) / 4 : 0, why: c => `your favourites' median year is ${c.year}` },
+  { key: "underground", name: "Underground", line: "Odds are your friends haven't heard of half your favourites.",
+    s: c => c.votes != null && c.votes <= (c.tv ? 8000 : 30000) ? 1 + Math.log10((c.tv ? 8000 : 30000) / Math.max(c.votes, 1)) : 0,
+    why: c => `your favourites have a median of ${fmtVotes(c.votes)} IMDb votes` },
+  { key: "popular", name: c => c.tv ? "Water-Cooler" : "Blockbuster",
+    line: c => c.tv ? "You're the one asking everyone: have you seen it yet?" : "You love what everyone's talking about, and you're not sorry.",
+    s: c => c.votes != null && c.votes >= (c.tv ? 250000 : 1000000) ? 1 + 2 * Math.log10(c.votes / (c.tv ? 250000 : 1000000)) : 0,
+    why: c => `your favourites have a median of ${fmtVotes(c.votes)} IMDb votes` },
+  { key: "prestige", name: "Top-Shelf", line: "Your favourites read like a greatest-of-all-time list.",
+    s: c => c.imdb != null && c.imdb >= (c.tv ? 8.6 : 8.3) ? 1 + (c.imdb - (c.tv ? 8.6 : 8.3)) / 0.3 : 0,
+    why: c => `your favourites average ${c.imdb.toFixed(1)} on IMDb` },
+  { key: "contrarian", name: "Against-the-Grain", line: "You love what the crowd shrugged at.",
+    s: c => c.gap != null && c.gap >= 1.8 ? 1 + (c.gap - 1.8) / 0.6 : 0,
+    why: c => `you rate your favourites ${c.gap.toFixed(1)} points above IMDb` },
+  { key: "epic", name: "Epic-Length", line: "Three hours? Pause for snacks and keep going.",
+    s: c => !c.tv && c.runtime != null && c.runtime >= 150 ? 1 + (c.runtime - 150) / 20 : 0, why: c => `your favourites average ${hm(c.runtime)}` },
+  { key: "short", name: "Short-and-Sweet", line: "In and out in 90 minutes, as nature intended.",
+    s: c => !c.tv && c.runtime != null && c.runtime <= 95 ? 1 + (95 - c.runtime) / 10 : 0, why: c => `your favourites average ${hm(c.runtime)}` },
+  { key: "longhaul", name: "Long-Haul", line: "Seven seasons in, you're just getting comfortable.",
+    s: c => c.tv && c.seasons != null && c.seasons >= 6 ? 1 + (c.seasons - 6) / 3 : 0, why: c => `your favourites average ${c.seasons.toFixed(1)} seasons` },
+  { key: "limited", name: "Limited-Series", line: "One perfect season and out.",
+    s: c => c.tv && c.mini >= 0.4 ? 1 + (c.mini - 0.4) / 0.3 : 0, why: c => `${Math.round(c.mini * 100)}% of your favourites are mini-series` },
+  { key: "auteur", name: "Auteur-Obsessed", line: c => `When ${c.dir.name} makes something, you are first in line.`,
+    s: c => c.dir && c.dir.share >= 0.15 ? 1 + (c.dir.share - 0.15) / 0.1 : 0, why: c => `${c.dir.name} made ${c.dir.n} of your ${c.nL} favourites` },
+  { key: "subtitles", name: "Subtitles-On", line: "Subtitles on, phone down.",
+    s: c => c.foreign != null && c.foreign >= 0.3 ? 1 + (c.foreign - 0.3) / 0.2 : 0, why: c => `${Math.round(c.foreign * 100)}% of your favourites aren't in English` }
+];
+const FALLBACK_MODS = [
+  { key: "generous", name: "Big-Hearted", line: "Generous with the high scores, and why not?", s: c => c.avg >= 7.8 ? 1 : 0, why: c => `your average rating is ${c.avg.toFixed(1)}` },
+  { key: "tough", name: "Hard-to-Please", line: "A 9 from you actually means something.", s: c => c.avg <= 6.2 ? 1 : 0, why: c => `your average rating is ${c.avg.toFixed(1)}` },
+  { key: "discerning", name: "Discerning", line: "You know exactly what you like.", s: () => 0.5, why: () => "" }
+];
+const median = a => { const s = a.filter(x => x != null).sort((x, y) => x - y); return s.length ? (s.length % 2 ? s[(s.length - 1) / 2] : (s[s.length / 2 - 1] + s[s.length / 2]) / 2) : null; };
+const fmtVotes = v => v >= 1e6 ? (v / 1e6).toFixed(1).replace(/\.0$/, "") + "M" : v >= 1e3 ? Math.round(v / 1e3) + "K" : String(Math.round(v));
+const hm = m => `${Math.floor(m / 60)} h ${String(Math.round(m % 60)).padStart(2, "0")} min`;
+
+// Your 9s and 10s; if there are fewer than 5 of those, your top 10% (at least 5).
+function lovedSet(items) {
+  const sorted = [...items].sort((a, b) => b.rating - a.rating || (b.imdb ?? 0) - (a.imdb ?? 0));
+  const nines = sorted.filter(t => t.rating >= 9);
+  if (nines.length >= 5) return { list: nines, label: "nines and tens", top: false };
+  const k = Math.min(sorted.length, Math.max(5, Math.ceil(sorted.length * 0.1)));
+  const cut = sorted[k - 1]?.rating;
+  return { list: sorted.filter(t => t.rating >= cut), label: "highest-rated", top: true };
+}
+
+function makePersona(items, mode, tmdbOf) {
+  if (items.length < 5) return null;
+  const tv = mode === "tv", { list: L, label, top } = lovedSet(items);
+  // Genres that appear more in your favourites than in everything you rate. Smoothed so tiny counts don't win.
+  const share = (list, test) => (list.filter(test).length + 0.5) / (list.length + 1);
+  const scoreOf = (test, n) => {
+    const sL = share(L, test), sA = share(items, test);
+    return n >= 2 || n / L.length >= 0.34 ? sL * Math.sqrt(sL / sA) : 0;
+  };
+  const cands = [];
+  const genreCount = new Map();
+  for (const t of L) for (const g of new Set(t.genres)) genreCount.set(g, (genreCount.get(g) || 0) + 1);
+  for (const [g, n] of genreCount) if (GENRE_NOUN[g])
+    cands.push({ noun: GENRE_NOUN[g], genres: [g], n, score: scoreOf(t => t.genres.includes(g), n) * (g === "Drama" ? 0.5 : 1) });
+  for (const [[a, b], noun] of PAIR_NOUN) {
+    const test = t => t.genres.includes(a) && t.genres.includes(b), n = L.filter(test).length;
+    if (n) cands.push({ noun, genres: [a, b], n, score: scoreOf(test, n) * 1.15 });
+  }
+  cands.sort((x, y) => y.score - x.score);
+  const pick = cands[0] || { noun: "heart", genres: [], n: 0 };
+  const noun = NOUNS[pick.noun];
+
+  const crowd = L.filter(t => t.imdb != null);
+  const langs = L.map(t => tmdbOf(t)?.lg).filter(Boolean);
+  const ns = L.map(t => tmdbOf(t)?.ns).filter(Boolean);
+  const c = {
+    tv, now: new Date().getFullYear(), avg: mean(items.map(t => t.rating)),
+    year: median(L.map(t => t.year)), votes: median(L.map(t => t.votes)),
+    imdb: crowd.length ? mean(crowd.map(t => t.imdb)) : null, gap: crowd.length ? mean(crowd.map(t => t.rating - t.imdb)) : null,
+    runtime: mean(L.map(t => t.runtime).filter(x => x)), seasons: ns.length >= 3 ? mean(ns) : null,
+    mini: L.filter(t => t.type === "Mini-series").length / L.length,
+    foreign: langs.length >= Math.min(5, L.length) ? langs.filter(l => l !== "en").length / langs.length : null
+  };
+  if (c.year != null) c.year = Math.round(c.year);
+  const dirs = tv ? [] : groupBy(L, t => t.directors).sort((a, b) => b.n - a.n);
+  c.nL = L.length; c.dir = dirs[0] && dirs[0].n >= 3 ? { name: dirs[0].name, n: dirs[0].n, share: dirs[0].n / L.length } : null;
+  const val = (x, c) => typeof x === "function" ? x(c) : x;
+  const mods = MODS.map(m => ({ m, s: m.s(c) })).filter(x => x.s > 0).sort((a, b) => b.s - a.s);
+  const mod = mods[0]?.m || FALLBACK_MODS.find(m => m.s(c) > 0);
+  const items_ = tv ? "shows" : "films", item_ = tv ? "show" : "film";
+  const fill = s => s.replace("{items}", items_).replace("{item}", item_);
+  const genreWhy = pick.genres.length ? `${pick.genres.join(" and ")} ${pick.genres.length > 1 ? "together " : ""}in ${pick.n} of your ${L.length} ${label}` : "";
+  return {
+    name: `The ${val(mod.name, c)} ${noun.name}`, line: fill(noun.line) + " " + fill(val(mod.line, c)),
+    why: [genreWhy, mod.why(c)].filter(Boolean), pal: PALETTES[noun.pal], loved: L, lovedLabel: label, top,
+    debug: { cands: cands.slice(0, 4).map(x => x.noun + ":" + x.genres.join("+") + " " + x.score.toFixed(2)), mods: mods.map(x => x.m.key + " " + x.s.toFixed(2)), c }
+  };
+}
+const SITE_URL = "https://m-arp.github.io/reel-report/";
+function renderPersona() {
+  const el = $("#persona"), mode = state.filter;
+  const p = state.persona = makePersona(modeItems(mode), mode, tm);
+  if (!p) { el.hidden = true; el.innerHTML = ""; return; }
+  el.hidden = false;
+  for (const [k, v] of [["--p1", p.pal.bg[0]], ["--p2", p.pal.bg[1]], ["--pink", p.pal.ink], ["--pacc", p.pal.accent]]) el.style.setProperty(k, v);
+  el.innerHTML = `<span class="pk">Your ${mode === "tv" ? "TV" : "film"} persona</span>
+    <h2>${esc(p.name)}</h2><p class="pl">${esc(p.line)}</p>
+    ${p.why.length ? `<p class="pw">${esc(p.why.join("; ").replace(/^./, s => s.toUpperCase()))}.</p>` : ""}
+    <button class="btn" type="button" id="shareOpen">Make a share card</button>`;
+}
+
+// Breaks text into lines no wider than max at the current font.
+function wrapText(ctx, text, max) {
+  const lines = []; let line = "";
+  for (const w of text.split(/\s+/)) {
+    const next = line ? line + " " + w : w;
+    if (line && ctx.measureText(next).width > max) { lines.push(line); line = w; } else line = next;
+  }
+  if (line) lines.push(line);
+  return lines;
+}
+function clip(ctx, text, max) {
+  if (ctx.measureText(text).width <= max) return text;
+  while (text.length > 1 && ctx.measureText(text + "…").width > max) text = text.slice(0, -1);
+  return text.trimEnd() + "…";
+}
+
+// A 1080 x 1920 story-sized image of the persona.
+async function drawCard(p, mode) {
+  const W = 1080, H = 1920, X = 90, CW = W - 2 * X;
+  const DISPLAY = "'Bricolage Grotesque', 'Segoe UI', sans-serif", BODY = "Inter, 'Segoe UI', sans-serif";
+  try { await Promise.all(["800 120px 'Bricolage Grotesque'", "500 40px Inter", "600 40px Inter"].map(f => document.fonts.load(f))); } catch {}
+  const cv = document.createElement("canvas"); cv.width = W; cv.height = H;
+  const ctx = cv.getContext("2d");
+  const { bg, ink, accent } = p.pal;
+  const g = ctx.createLinearGradient(0, 0, W, H); g.addColorStop(0, bg[0]); g.addColorStop(1, bg[1]);
+  ctx.fillStyle = g; ctx.fillRect(0, 0, W, H);
+  // Decoration: a large soft disc and two rings in the accent colour.
+  ctx.globalAlpha = 0.14; ctx.fillStyle = accent;
+  ctx.beginPath(); ctx.arc(W - 40, 260, 340, 0, Math.PI * 2); ctx.fill();
+  ctx.globalAlpha = 0.14; ctx.strokeStyle = accent; ctx.lineWidth = 18;
+  ctx.beginPath(); ctx.arc(-60, H - 420, 260, 0, Math.PI * 2); ctx.stroke();
+  ctx.lineWidth = 8; ctx.beginPath(); ctx.arc(-60, H - 420, 340, 0, Math.PI * 2); ctx.stroke();
+  ctx.globalAlpha = 1;
+  const spaced = (px) => { if ("letterSpacing" in ctx) ctx.letterSpacing = px + "px"; };
+  ctx.textBaseline = "alphabetic"; ctx.fillStyle = ink;
+
+  // Header
+  ctx.font = `800 44px ${DISPLAY}`; spaced(1); ctx.fillStyle = accent; ctx.fillText("REEL REPORT", X, 150);
+  ctx.font = `600 34px ${BODY}`; spaced(5); ctx.fillStyle = ink; ctx.globalAlpha = 0.85;
+  ctx.fillText(`MY ${mode === "tv" ? "TV" : "FILM"} PERSONA`, X, 300); ctx.globalAlpha = 1; spaced(0);
+
+  // Persona name, as large as fits in three lines.
+  let size = 140, lines;
+  do { ctx.font = `800 ${size}px ${DISPLAY}`; lines = wrapText(ctx, p.name, CW); size -= 6; } while ((lines.length > 3 || lines.some(l => ctx.measureText(l).width > CW)) && size > 72);
+  size += 6;
+  let y = 300 + 30 + size * 0.92;
+  for (const l of lines) { ctx.fillText(l, X, y); y += size * 1.0; }
+
+  // Tagline
+  ctx.font = `500 42px ${BODY}`; ctx.globalAlpha = 0.92; y += 30 - size * 0.08;
+  for (const l of wrapText(ctx, p.line, CW).slice(0, 5)) { ctx.fillText(l, X, y); y += 58; }
+  ctx.globalAlpha = 1;
+
+  // Stats along the bottom, then favourites in the space between.
+  const statsTop = 1580;
+  const items = modeItems(mode), avg = mean(items.map(t => t.rating));
+  const stats = [[fmtInt(items.length), mode === "tv" ? "shows rated" : "films rated"],
+    [fmtInt(p.loved.length), p.top ? "top-rated" : "9s and 10s"], [avg.toFixed(1), "my average"]];
+  ctx.fillStyle = ink; ctx.globalAlpha = 0.35; ctx.fillRect(X, statsTop - 50, CW, 3); ctx.globalAlpha = 1;
+  stats.forEach(([v, k], i) => {
+    const sx = X + i * (CW / 3);
+    ctx.font = `800 92px ${DISPLAY}`; ctx.fillStyle = accent; ctx.fillText(v, sx, statsTop + 70);
+    ctx.font = `500 32px ${BODY}`; ctx.fillStyle = ink; ctx.fillText(k, sx, statsTop + 120);
+  });
+
+  y += 50;
+  const rowH = 70, room = Math.floor((statsTop - 90 - (y + 56)) / rowH);
+  const favs = p.loved.slice(0, Math.max(0, Math.min(5, room)));
+  if (favs.length >= 2) {
+    ctx.font = `600 30px ${BODY}`; spaced(4); ctx.globalAlpha = 0.8; ctx.fillStyle = ink;
+    ctx.fillText(`MY TOP ${favs.length}`, X, y); ctx.globalAlpha = 1; spaced(0);
+    y += 30;
+    favs.forEach((t, i) => {
+      y += rowH;
+      ctx.font = `800 50px ${DISPLAY}`; ctx.fillStyle = accent; ctx.fillText(String(i + 1), X, y);
+      ctx.font = `500 34px ${BODY}`; ctx.fillStyle = ink; ctx.globalAlpha = 0.75;
+      const yr = t.year ? String(t.year) : ""; const yw = ctx.measureText(yr).width;
+      ctx.fillText(yr, X + CW - yw, y); ctx.globalAlpha = 1;
+      ctx.font = `600 42px ${BODY}`; ctx.fillText(clip(ctx, t.title, CW - 80 - yw - 30), X + 80, y);
+    });
+  }
+
+  // Footer
+  ctx.font = `500 30px ${BODY}`; ctx.fillStyle = ink; ctx.globalAlpha = 0.75;
+  ctx.fillText("Find yours at m-arp.github.io/reel-report", X, H - 90); ctx.globalAlpha = 1;
+  return new Promise(r => cv.toBlob(r, "image/png"));
+}
+
+let shareBlob = null, shareUrl = null;
+async function openShare() {
+  const p = state.persona; if (!p) return;
+  const dlg = $("#shareDlg"), img = $("#shareImg"), msg = $("#shareMsg");
+  msg.textContent = ""; img.removeAttribute("src"); img.alt = `${p.name}. ${p.line}`;
+  dlg.showModal();
+  shareBlob = await drawCard(p, state.filter);
+  if (shareUrl) URL.revokeObjectURL(shareUrl);
+  shareUrl = URL.createObjectURL(shareBlob); img.src = shareUrl;
+  const file = shareFile();
+  $("#shareNative").hidden = !(navigator.canShare && navigator.canShare({ files: [file] }));
+  $("#shareCopy").hidden = !(window.ClipboardItem && navigator.clipboard?.write);
+}
+const shareFile = () => new File([shareBlob], `reel-report-${state.filter === "tv" ? "tv" : "film"}-persona.png`, { type: "image/png" });
+document.addEventListener("click", e => { if (e.target.id === "shareOpen") openShare(); });
+$("#shareClose").addEventListener("click", () => $("#shareDlg").close());
+$("#shareDlg").addEventListener("click", e => { if (e.target === e.currentTarget) e.currentTarget.close(); });
+$("#shareDl").addEventListener("click", () => {
+  if (!shareBlob) return;
+  const a = document.createElement("a"); a.href = shareUrl; a.download = shareFile().name;
+  document.body.append(a); a.click(); a.remove();
+});
+$("#shareNative").addEventListener("click", async () => {
+  if (!shareBlob) return;
+  try { await navigator.share({ files: [shareFile()], title: state.persona.name, text: `I'm ${state.persona.name}. Find yours at ${SITE_URL}` }); }
+  catch (e) { if (e.name !== "AbortError") $("#shareMsg").textContent = "Sharing didn't work here. Download the image instead."; }
+});
+$("#shareCopy").addEventListener("click", async () => {
+  if (!shareBlob) return;
+  try { await navigator.clipboard.write([new ClipboardItem({ "image/png": shareBlob })]); $("#shareMsg").textContent = "Image copied. Paste it into a post or message."; }
+  catch { $("#shareMsg").textContent = "Couldn't copy the image here. Download it instead."; }
+});
+
 /* ---------- Likes and dislikes ---------- */
 function renderLists(items) {
   const crowd = items.filter(t => t.imdb != null && (t.votes == null || t.votes >= 1000));
@@ -803,11 +1125,12 @@ function render() {
   const items = visible();
   if (!items.length) {
     $("#tiles").innerHTML = `<div class="tile"><span class="d">This file has no ${state.filter === "tv" ? "TV" : "films"} in it.</span></div>`;
-    $("#lists").innerHTML = ""; $("#slot-top").innerHTML = ""; $("#slot-bottom").innerHTML = ""; $("#recs").innerHTML = "";
+    $("#persona").hidden = true; $("#lists").innerHTML = ""; $("#slot-top").innerHTML = ""; $("#slot-bottom").innerHTML = ""; $("#recs").innerHTML = "";
     return;
   }
   if (!$("#sec-genres")) buildLayout();
   renderOverview(items);
+  renderPersona();
   renderLists(items);
   for (const k of shownGroups()) renderGroup(k, items);
   renderRecs();
