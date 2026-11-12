@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<meta name="description" content="See statistics on your IMDb ratings: genres, directors, actors, studios, networks, likes and dislikes.">
+<meta name="description" content="See statistics on your IMDb ratings and get recommendations: genres, directors, actors, studios, networks, likes and dislikes.">
 </head>
 <body>
 <title>Reel Report</title>
@@ -135,6 +135,18 @@ input[type=number] { width: 4.2em; }
 /* Title lists */
 .lists { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 28px 44px; }
 @media (max-width: 760px) { .lists { grid-template-columns: minmax(0, 1fr); } }
+.recs { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(auto-fill, minmax(148px, 1fr)); gap: 24px 18px; }
+.rec { min-width: 0; }
+.rec .poster { display: block; aspect-ratio: 2 / 3; border-radius: 8px; overflow: hidden; background: var(--sunk); border: 1px solid var(--line); }
+.rec img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.rec .noimg { display: grid; place-items: center; height: 100%; padding: 12px; text-align: center; color: var(--muted); font: 600 14px/1.3 var(--font-display); }
+.rec h3 { font-size: .98rem; line-height: 1.3; margin: 10px 0 2px; overflow-wrap: anywhere; }
+.rec h3 a { color: inherit; text-decoration: none; }
+.rec h3 a:hover { text-decoration: underline; }
+.rec .meta, .rec .why { margin: 0; font-size: 12.5px; color: var(--muted); }
+.rec .why { margin-top: 4px; }
+.rec .why b { font-weight: 600; color: var(--ink); }
+@media (max-width: 520px) { .recs { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 20px 14px; } }
 .lists h3 { font-size: 1.05rem; margin-bottom: 2px; }
 .lists .sub { margin: 0 0 10px; font-size: 13px; }
 .tlist { margin: 0; padding: 0; list-style: none; counter-reset: r; }
@@ -225,6 +237,11 @@ footer p { margin: 0 0 6px; max-width: 80ch; }
       <div class="prog" id="tmdbProg" hidden><i></i></div>
       <p class="status" id="tmdbStatus"></p>
     </div>
+  </section>
+
+  <section class="panel" id="recPanel">
+    <div class="phead"><div><h2 id="recHead">Films to watch next</h2><p class="sub">Picked from TMDB's suggestions for the titles you rated highest, weighted toward genres you rate above your average and toward well-reviewed titles. Anything you've rated is left out.</p></div></div>
+    <div id="recs"></div>
   </section>
 
   <div id="slot-bottom"></div>
@@ -553,10 +570,11 @@ const store = {
   set(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch {} },
   del(k) { try { localStorage.removeItem(k); } catch {} }
 };
-// v2 adds studios, networks, creators and seasons; v1 entries lack them, so they are looked up again.
-state.tmdb.titles = store.get("rr.tmdb.titles.v2") || {};
-store.del("rr.tmdb.titles.v1");
+// v3 adds each title's TMDB id (needed for recommendations); older entries are looked up again.
+state.tmdb.titles = store.get("rr.tmdb.titles.v3") || {};
+store.del("rr.tmdb.titles.v1"); store.del("rr.tmdb.titles.v2");
 state.tmdb.cols = store.get("rr.tmdb.cols.v1") || {};
+state.tmdb.recs = store.get("rr.tmdb.recs.v1") || {};
 
 const $ = s => document.querySelector(s);
 const esc = s => String(s).replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
@@ -696,6 +714,72 @@ function renderOverview(items) {
     `<div class="tile"><span class="k">${k}</span><span class="v${isName ? " name" : ""}">${v}</span><span class="d">${esc(d)}</span></div>`).join("");
 }
 
+/* ---------- Recommendations ---------- */
+const tidOf = t => state.tmdb.titles[t.id]?.tid;
+const modeItems = m => state.all.filter(t => m === "tv" ? t.type === "TV Series" || t.type === "Mini-series" : FILM_TYPES.has(t.type));
+const TMDB_GENRES = { 28: ["Action"], 12: ["Adventure"], 16: ["Animation"], 35: ["Comedy"], 80: ["Crime"], 99: ["Documentary"],
+  18: ["Drama"], 10751: ["Family"], 14: ["Fantasy"], 36: ["History"], 27: ["Horror"], 10402: ["Music"], 9648: ["Mystery"],
+  10749: ["Romance"], 878: ["Sci-Fi"], 53: ["Thriller"], 10752: ["War"], 37: ["Western"], 10759: ["Action", "Adventure"],
+  10762: ["Family"], 10765: ["Sci-Fi", "Fantasy"], 10768: ["War"] };
+
+// The titles whose TMDB suggestions are used: your highest rated, at or above your average.
+function pickSeeds(items, tidOf, max = 30) {
+  const avg = mean(items.map(t => t.rating));
+  return items.filter(t => tidOf(t) && t.rating >= Math.max(7, avg))
+    .sort((a, b) => b.rating - a.rating || (b.imdb ?? 0) - (a.imdb ?? 0)).slice(0, max);
+}
+
+function scoreRecs(items, seeds, tidOf, recsOf, seenTids, opts = {}) {
+  const avg = mean(items.map(t => t.rating));
+  const today = new Date().toISOString().slice(0, 10);
+  const minVotes = opts.minVotes ?? 100;
+  // How much more (or less) than usual you like each genre, from genres with 3+ titles.
+  const aff = new Map(groupBy(items, t => t.genres).filter(g => g.n >= 3).map(g => [g.name, g.avg - avg]));
+  const cands = new Map();
+  for (const s of seeds) {
+    const list = recsOf(tidOf(s)); if (!list) continue;
+    const kind = tidOf(s)[0], w = Math.max(0.5, s.rating - avg + 1);
+    list.forEach(([id, name, date, va, vc, poster, gids], i) => {
+      const key = kind + id;
+      if (seenTids.has(key) || !date || date > today || vc < minVotes) return;
+      const add = w * (1 - i / 30);
+      const c = cands.get(key) || { key, id, kind, name, date, va, vc, poster, gids, raw: 0, from: [] };
+      c.raw += add; c.from.push([s, add]); cands.set(key, c);
+    });
+  }
+  for (const c of cands.values()) {
+    const genres = [...new Set(c.gids.flatMap(g => TMDB_GENRES[g] || []))];
+    const g = mean(genres.map(x => aff.get(x) ?? 0)) ?? 0;
+    const taste = 1 + 0.35 * Math.max(-1, Math.min(1, g / 1.5));
+    const quality = Math.max(0.1, Math.min(1.4, (c.va - 5.5) / 2.5));
+    c.score = c.raw * taste * quality;
+    c.from.sort((a, b) => b[1] - a[1]);
+  }
+  return [...cands.values()].sort((a, b) => b.score - a.score);
+}
+
+function renderRecs() {
+  const tv = state.filter === "tv", el = $("#recs");
+  $("#recHead").textContent = tv ? "Shows to watch next" : "Films to watch next";
+  const items = modeItems(state.filter), seeds = pickSeeds(items, tidOf);
+  if (!seeds.some(s => state.tmdb.recs[tidOf(s)])) {
+    el.innerHTML = `<div class="empty">${tmdbRunning ? "Finding recommendations…" : "Click Look up details on TMDB above to get recommendations."}</div>`;
+    return;
+  }
+  const seen = new Set(state.all.map(tidOf).filter(Boolean));
+  const picks = scoreRecs(items, seeds, tidOf, k => state.tmdb.recs[k], seen, { minVotes: tv ? 50 : 200 }).slice(0, 12);
+  if (!picks.length) { el.innerHTML = `<div class="empty">Nothing to recommend yet. Rate a few more ${tv ? "shows" : "films"} 7 or higher and look up again.</div>`; return; }
+  el.innerHTML = `<ol class="recs">${picks.map(c => {
+    const url = `https://www.themoviedb.org/${c.kind === "m" ? "movie" : "tv"}/${c.id}`;
+    const img = c.poster ? `<img src="https://image.tmdb.org/t/p/w342${esc(c.poster)}" alt="" loading="lazy">` : `<span class="noimg">${esc(c.name)}</span>`;
+    const why = c.from.slice(0, 2).map(f => `<b>${esc(f[0].title)}</b>`).join(" and ");
+    return `<li class="rec"><a class="poster" href="${url}" target="_blank" rel="noopener" tabindex="-1" aria-hidden="true">${img}</a>
+      <h3><a href="${url}" target="_blank" rel="noopener">${esc(c.name)}</a></h3>
+      <p class="meta">${esc(c.date.slice(0, 4))} · TMDB ${Number(c.va).toFixed(1)}</p>
+      <p class="why">Because you liked ${why}</p></li>`;
+  }).join("")}</ol>`;
+}
+
 /* ---------- Likes and dislikes ---------- */
 function renderLists(items) {
   const crowd = items.filter(t => t.imdb != null && (t.votes == null || t.votes >= 1000));
@@ -719,13 +803,14 @@ function render() {
   const items = visible();
   if (!items.length) {
     $("#tiles").innerHTML = `<div class="tile"><span class="d">This file has no ${state.filter === "tv" ? "TV" : "films"} in it.</span></div>`;
-    $("#lists").innerHTML = ""; $("#slot-top").innerHTML = ""; $("#slot-bottom").innerHTML = "";
+    $("#lists").innerHTML = ""; $("#slot-top").innerHTML = ""; $("#slot-bottom").innerHTML = ""; $("#recs").innerHTML = "";
     return;
   }
   if (!$("#sec-genres")) buildLayout();
   renderOverview(items);
   renderLists(items);
   for (const k of shownGroups()) renderGroup(k, items);
+  renderRecs();
 }
 function setMode(mode) {
   state.filter = mode;
@@ -764,7 +849,7 @@ function readFile(file) {
     try {
       load(String(reader.result), "file", file.name);
       $("#overview").scrollIntoView({ behavior: "smooth", block: "start" });
-      if (lookupable().some(t => !state.tmdb.titles[t.id])) runTmdb();
+      if (needsLookup()) runTmdb();
     }
     catch (e) { err.textContent = e.message; err.hidden = false; }
   };
@@ -812,7 +897,7 @@ async function proxyGet(path) {
   }
   throw new TmdbError("The lookup service is busy. Wait a minute and try again.", true);
 }
-const lookupTitle = async t => (await proxyGet(`/v2/title/${t.id}`)) || { c: [], col: null };
+const lookupTitle = async t => (await proxyGet(`/v3/title/${t.id}`)) || { c: [], col: null };
 
 async function pool(list, size, fn, onTick) {
   let i = 0, done = 0, fatal = null;
@@ -827,7 +912,10 @@ async function pool(list, size, fn, onTick) {
   if (fatal) throw fatal;
 }
 
-function saveTmdb() { store.set("rr.tmdb.titles.v2", state.tmdb.titles); store.set("rr.tmdb.cols.v1", state.tmdb.cols); }
+function saveTmdb() { store.set("rr.tmdb.titles.v3", state.tmdb.titles); store.set("rr.tmdb.cols.v1", state.tmdb.cols); store.set("rr.tmdb.recs.v1", state.tmdb.recs); }
+// Seeds for recommendations in both views whose suggestions haven't been fetched yet.
+const missingRecs = () => [...new Set(["films", "tv"].flatMap(m => pickSeeds(modeItems(m), tidOf).map(tidOf)))].filter(k => !state.tmdb.recs[k]);
+const needsLookup = () => lookupable().some(t => !state.tmdb.titles[t.id]) || missingRecs().length > 0;
 function setProgress(frac) { const p = $("#tmdbProg"); p.hidden = frac == null; if (frac != null) p.firstElementChild.style.width = (frac * 100).toFixed(1) + "%"; }
 function setStatus(msg, isErr) { const s = $("#tmdbStatus"); s.textContent = msg; s.classList.toggle("err", !!isErr); }
 function lookupable() { return state.all.filter(t => !["Episode", "Video Game", "Podcast"].includes(t.type)); }
@@ -842,6 +930,7 @@ async function runTmdb() {
   const todo = lookupable().filter(t => !state.tmdb.titles[t.id]);
   tmdbRunning = true; $("#tmdbGo").disabled = true;
   for (const k of shownGroups()) if (GROUPS[k].tmdb) renderGroup(k, visible());
+  renderRecs();
   try {
     if (todo.length) {
       setStatus(`Looking up ${todo.length} titles…`); setProgress(0);
@@ -858,6 +947,11 @@ async function runTmdb() {
         const d = await proxyGet(`/collection/${id}`);
         if (d) state.tmdb.cols[id] = { name: d.name, total: d.total };
       }, n => setProgress(n / colIds.length));
+    }
+    const recIds = missingRecs();
+    if (recIds.length) {
+      setStatus("Finding recommendations…"); setProgress(0);
+      await pool(recIds, 6, async k => { state.tmdb.recs[k] = (await proxyGet(`/v3/recs/${k}`)) || []; }, n => setProgress(n / recIds.length));
     }
     saveTmdb(); tmdbRunning = false; setProgress(null); updateTmdbStatus();
   } catch (e) {
