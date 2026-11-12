@@ -92,8 +92,8 @@ select, input[type=number], input[type=password], input[type=text] { font: 14px 
 input[type=number] { width: 4.2em; }
 
 /* Overview */
-.tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(165px, 1fr)); gap: 1px; background: var(--line); border: 1px solid var(--line); border-radius: var(--radius); overflow: hidden; }
-.tile { background: var(--surface); padding: 16px 18px; display: grid; gap: 4px; align-content: start; }
+.tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(165px, 1fr)); background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); overflow: hidden; }
+.tile { background: var(--surface); padding: 16px 18px; display: grid; gap: 4px; align-content: start; box-shadow: 1px 0 0 var(--line), 0 1px 0 var(--line); }
 .tile .k { font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: .08em; color: var(--muted); }
 .tile .v { font: 700 1.9rem/1.1 var(--font-display); font-variant-numeric: tabular-nums; }
 .tile .d { font-size: 13px; color: var(--muted); }
@@ -663,14 +663,12 @@ function renderOverview(items) {
   const diff = mean(crowdItems.map(t => t.rating - t.imdb));
   const filmMins = items.filter(t => FILM_TYPES.has(t.type)).reduce((s, t) => s + (t.runtime || 0), 0);
   const above = crowdItems.filter(t => t.rating > t.imdb).length;
-  const dates = items.map(t => t.date).filter(Boolean).sort();
   const tiles = [
     ["Titles rated", fmtInt(n), `${items.filter(t => FILM_TYPES.has(t.type)).length} films · ${items.filter(t => TV_TYPES.has(t.type)).length} TV`],
     ["Your average", f1(avg), `IMDb average ${f1(crowd)} for the same titles`],
     ["Versus the crowd", diff == null ? "–" : (diff >= 0 ? "+" : "−") + Math.abs(diff).toFixed(2), diff == null ? "" : diff >= 0 ? "points above IMDb per title" : "points below IMDb per title"],
     ["Rated above IMDb", crowdItems.length ? Math.round(100 * above / crowdItems.length) + "%" : "–", `${above} of ${crowdItems.length} titles`],
-    ["Film hours", fmtInt(filmMins / 60), `about ${fmtInt(filmMins / 60 / 24)} days of films`],
-    ["Rating since", dates.length ? dates[0].slice(0, 4) : "–", dates.length ? `last rating ${dates[dates.length - 1]}` : "no dates in file"]
+    ["Film hours", fmtInt(filmMins / 60), `about ${fmtInt(filmMins / 60 / 24)} days of films`]
   ];
   $("#tiles").innerHTML = tiles.map(([k, v, d]) => `<div class="tile"><span class="k">${k}</span><span class="v">${v}</span><span class="d">${esc(d)}</span></div>`).join("");
 
