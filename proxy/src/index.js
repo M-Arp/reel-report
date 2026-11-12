@@ -1,8 +1,16 @@
 // Reel Report lookup service: a small Cloudflare Worker that looks titles up on TMDB
 // with the site owner's key, so visitors don't need one.
 //
-//   GET /title/tt0119174  -> { c: [[personId, name], ...up to 8], col: [collectionId, name] | null }
-//   GET /collection/9485  -> { name, total }   (total = entries already released)
+//   GET /v2/title/tt0119174 -> {
+//     c:   [[personId, name], ...]   top 8 billed cast
+//     col: [collectionId, name] | null   film series (films only)
+//     s:   [[id, name], ...]   up to 3 production companies (films) or networks (TV)
+//     cr:  [[personId, name], ...]   creators (TV only)
+//     ns:  number of seasons (TV only)
+//     lg:  original language code;  co: country codes
+//   }
+//   GET /title/tt0119174    -> same as /v2/title (older pages only read c and col)
+//   GET /collection/9485    -> { name, total }   (total = entries already released)
 //
 // The TMDB key lives in the TMDB_KEY secret (API key or API Read Access Token).
 
@@ -26,7 +34,7 @@ export default {
 
     const url = new URL(request.url);
     let handler, m;
-    if ((m = url.pathname.match(/^\/title\/(tt\d{5,10})$/))) handler = () => lookupTitle(m[1], env.TMDB_KEY);
+    if ((m = url.pathname.match(/^(?:\/v2)?\/title\/(tt\d{5,10})$/))) handler = () => lookupTitle(m[1], env.TMDB_KEY);
     else if ((m = url.pathname.match(/^\/collection\/(\d{1,10})$/))) handler = () => lookupCollection(m[1], env.TMDB_KEY);
     else return json({ error: "Not found" }, 404, cors);
 
@@ -77,15 +85,17 @@ async function lookupTitle(imdbId, key) {
   const found = await tmdb(`/find/${imdbId}`, { external_source: "imdb_id" }, key);
   const movie = found?.movie_results?.[0];
   const show = found?.tv_results?.[0];
-  const cast = list => (list || []).slice(0, 8).map(p => [p.id, p.name]);
+  const pairs = (list, n) => (list || []).slice(0, n).map(p => [p.id, p.name]);
   if (movie) {
     const d = await tmdb(`/movie/${movie.id}`, { append_to_response: "credits" }, key);
     const col = d?.belongs_to_collection;
-    return { c: cast(d?.credits?.cast), col: col ? [col.id, col.name] : null };
+    return { c: pairs(d?.credits?.cast, 8), col: col ? [col.id, col.name] : null, s: pairs(d?.production_companies, 3),
+      lg: d?.original_language || null, co: (d?.production_countries || []).map(x => x.iso_3166_1) };
   }
   if (show) {
     const d = await tmdb(`/tv/${show.id}`, { append_to_response: "aggregate_credits" }, key);
-    return { c: cast(d?.aggregate_credits?.cast), col: null };
+    return { c: pairs(d?.aggregate_credits?.cast, 8), col: null, s: pairs(d?.networks, 3), cr: pairs(d?.created_by, 4),
+      ns: d?.number_of_seasons ?? null, lg: d?.original_language || null, co: d?.origin_country || [] };
   }
   return { c: [], col: null };
 }

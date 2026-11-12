@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<meta name="description" content="See statistics on your IMDb ratings: genres, directors, actors, franchises, likes and dislikes.">
+<meta name="description" content="See statistics on your IMDb ratings: genres, directors, actors, studios, networks, likes and dislikes.">
 </head>
 <body>
 <title>Reel Report</title>
@@ -76,6 +76,8 @@ body::before { content: ""; position: fixed; inset: 0 0 auto; height: env(safe-a
 .seg { display: inline-flex; background: var(--sunk); border-radius: 9px; padding: 3px; }
 .seg button { font: 500 13px/1 var(--font-body); border: 0; background: transparent; color: var(--muted); padding: 8px 14px; border-radius: 7px; cursor: pointer; }
 .seg button[aria-pressed="true"] { background: var(--surface); color: var(--ink); box-shadow: 0 1px 2px rgb(0 0 0 / .12); }
+.seg button:disabled { opacity: .45; cursor: default; }
+.seg .cnt { font: 12px var(--font-mono); color: var(--muted); margin-left: 6px; }
 
 /* Sections */
 main { padding-block: 8px 64px; }
@@ -196,10 +198,9 @@ footer p { margin: 0 0 6px; max-width: 80ch; }
 <div class="bar">
   <div class="wrap">
     <div class="source"><span class="pill example" id="srcPill">Example data</span><span id="srcText">A made-up set of 190 ratings. Load your own file to replace it.</span></div>
-    <div class="seg" role="group" aria-label="Which titles to include">
-      <button type="button" data-f="all" aria-pressed="true">Everything</button>
-      <button type="button" data-f="films" aria-pressed="false">Films</button>
-      <button type="button" data-f="tv" aria-pressed="false">TV</button>
+    <div class="seg" role="group" aria-label="Show films or TV">
+      <button type="button" data-f="films" aria-pressed="true">Films<span class="cnt" id="cnt-films"></span></button>
+      <button type="button" data-f="tv" aria-pressed="false">TV<span class="cnt" id="cnt-tv"></span></button>
     </div>
   </div>
 </div>
@@ -210,10 +211,7 @@ footer p { margin: 0 0 6px; max-width: 80ch; }
     <ul class="notes" id="notes"></ul>
   </section>
 
-  <div class="pair">
-    <section class="panel" id="sec-genres"></section>
-    <section class="panel" id="sec-directors"></section>
-  </div>
+  <div id="slot-top"></div>
 
   <section class="panel">
     <div class="phead"><div><h2>Likes and dislikes</h2><p class="sub">Your favourites, your least favourites, and where you part ways with the IMDb crowd. Crowd comparisons only use titles with at least 1,000 votes.</p></div></div>
@@ -222,26 +220,21 @@ footer p { margin: 0 0 6px; max-width: 80ch; }
 
   <section class="panel">
     <div class="tmdb" id="tmdbBox">
-      <h2>Actors and franchises</h2>
-      <p>IMDb's export doesn't include cast or series information, so Reel Report looks each title up on <a href="https://www.themoviedb.org/" target="_blank" rel="noopener">TMDB</a>, a free movie database. This starts by itself when you load your file. Only the IMDb title IDs are sent; your ratings stay in your browser.</p>
+      <h2 id="tmdbHead">Actors, franchises and studios</h2>
+      <p>IMDb's export doesn't include cast, studio or network details, so Reel Report looks each title up on <a href="https://www.themoviedb.org/" target="_blank" rel="noopener">TMDB</a>, a free movie database. This starts by itself when you load your file. Only the IMDb title IDs are sent; your ratings stay in your browser.</p>
       <div class="row">
-        <button class="btn" id="tmdbGo" type="button">Look up cast and franchises</button>
+        <button class="btn" id="tmdbGo" type="button">Look up details on TMDB</button>
       </div>
       <div class="prog" id="tmdbProg" hidden><i></i></div>
       <p class="status" id="tmdbStatus"></p>
     </div>
   </section>
 
-  <div class="pair">
-    <section class="panel" id="sec-actors"></section>
-    <section class="panel" id="sec-franchises"></section>
-  </div>
-
-  <section class="panel" id="sec-decades"></section>
+  <div id="slot-bottom"></div>
 </main>
 
 <footer class="wrap">
-  <p>Reel Report isn't affiliated with IMDb. Your ratings file stays in your browser. Cast and franchise lookups send only IMDb title IDs to Reel Report's lookup service, which asks TMDB.</p>
+  <p>Reel Report isn't affiliated with IMDb. Your ratings file stays in your browser. TMDB lookups send only IMDb title IDs to Reel Report's lookup service, which asks TMDB.</p>
   <p>This product uses the TMDB API but is not endorsed or certified by TMDB.</p>
 </footer>
 
@@ -557,13 +550,15 @@ const SORTS = {
 };
 
 /* ---------- State ---------- */
-const state = { all: [], filter: "all", source: "example", fileName: "", tmdb: { titles: {}, cols: {} }, ui: {} };
+const state = { all: [], filter: "films", source: "example", fileName: "", tmdb: { titles: {}, cols: {} }, ui: {} };
 const store = {
   get(k) { try { return JSON.parse(localStorage.getItem(k)); } catch { return null; } },
   set(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch {} },
   del(k) { try { localStorage.removeItem(k); } catch {} }
 };
-state.tmdb.titles = store.get("rr.tmdb.titles.v1") || {};
+// v2 adds studios, networks, creators and seasons; v1 entries lack them, so they are looked up again.
+state.tmdb.titles = store.get("rr.tmdb.titles.v2") || {};
+store.del("rr.tmdb.titles.v1");
 state.tmdb.cols = store.get("rr.tmdb.cols.v1") || {};
 
 const $ = s => document.querySelector(s);
@@ -577,14 +572,18 @@ function chip(d) {
   return `<span class="chip ${cls}" title="Your average minus IMDb's average">${r > 0 ? "+" : r < 0 ? "−" : "±"}${Math.abs(r).toFixed(1)}</span>`;
 }
 function visible() {
-  if (state.filter === "films") return state.all.filter(t => FILM_TYPES.has(t.type));
-  if (state.filter === "tv") return state.all.filter(t => TV_TYPES.has(t.type));
-  return state.all;
+  return state.all.filter(t => (state.filter === "tv" ? TV_TYPES : FILM_TYPES).has(t.type));
 }
 
 /* ---------- Grouped sections ---------- */
 const castOf = t => (state.tmdb.titles[t.id]?.c || []).map(p => p[1]);
 const colOf = t => { const c = state.tmdb.titles[t.id]?.col; return c ? [String(c[0])] : []; };
+const tm = t => state.tmdb.titles[t.id] || {};
+const studiosOf = t => (tm(t).s || []).map(p => p[1]);
+const creatorsOf = t => (tm(t).cr || []).map(p => p[1]);
+const SEASON_BANDS = [[1, "1 season"], [2, "2–3 seasons"], [4, "4–6 seasons"], [7, "7 or more"]];
+const seasonsOf = t => { const n = tm(t).ns; return n ? [[...SEASON_BANDS].reverse().find(([m]) => n >= m)[1]] : []; };
+const seasonIndex = name => SEASON_BANDS.findIndex(b => b[1] === name);
 const colName = id => (state.tmdb.cols[id]?.name || state.tmdb.titleColNames?.[id] || "Collection").replace(/ Collection$/, "");
 const GROUPS = {
   genres: { title: "Genres", sub: "Every genre IMDb lists on a title counts, so one film can appear under several.", keys: t => t.genres, min: 1, label: "Genre" },
@@ -592,17 +591,35 @@ const GROUPS = {
   actors: { title: "Actors", sub: "The top eight billed cast on each title, from TMDB.", keys: castOf, min: 3, label: "Actor", tmdb: true },
   franchises: { title: "Franchises", sub: "Film series as TMDB groups them. Rated shows how many released entries you've rated.", keys: colOf, min: 1, label: "Series", tmdb: true,
     name: g => colName(g.name), count: g => { const tot = state.tmdb.cols[g.name]?.total; return tot ? `${g.n}<small>/${tot}</small>` : String(g.n); }, countHead: "Rated" },
-  decades: { title: "Decades", sub: "By release year.", keys: t => t.year ? [Math.floor(t.year / 10) * 10 + "s"] : [], fixed: (a, b) => a.name.localeCompare(b.name), label: "Decade" }
+  decades: { title: "Decades", sub: "By release year.", keys: t => t.year ? [Math.floor(t.year / 10) * 10 + "s"] : [], fixed: (a, b) => a.name.localeCompare(b.name), label: "Decade" },
+  studios: { title: "Studios", sub: "Up to three production companies per film, from TMDB.", keys: studiosOf, min: 2, label: "Studio", tmdb: true },
+  creators: { title: "Creators", sub: "The people credited with creating each series, from TMDB.", keys: creatorsOf, min: 1, label: "Creator", tmdb: true },
+  networks: { title: "Networks", sub: "Where each series aired or streams, from TMDB.", keys: studiosOf, min: 1, label: "Network", tmdb: true },
+  seasons: { title: "Series length", sub: "By number of seasons, from TMDB. Mini-series count as one season.", keys: seasonsOf, fixed: (a, b) => seasonIndex(a.name) - seasonIndex(b.name), label: "Seasons", tmdb: true }
 };
+// Which sections each view shows, in pairs. "top" sits above Likes and dislikes; "bottom" below the TMDB box.
+const LAYOUT = {
+  films: { top: [["genres", "directors"]], bottom: [["actors", "franchises"], ["decades", "studios"]], head: "Actors, franchises and studios" },
+  tv: { top: [["genres", "decades"]], bottom: [["actors", "creators"], ["networks", "seasons"]], head: "Actors, creators and networks" }
+};
+const shownGroups = () => { const l = LAYOUT[state.filter]; return [...l.top, ...l.bottom].flat(); };
+function buildLayout() {
+  const l = LAYOUT[state.filter];
+  const rows = list => list.map(r => `<div class="pair">${r.map(k => `<section class="panel" id="sec-${k}"></section>`).join("")}</div>`).join("");
+  $("#slot-top").innerHTML = rows(l.top);
+  $("#slot-bottom").innerHTML = rows(l.bottom);
+  $("#tmdbHead").textContent = l.head;
+  shownGroups().forEach(sectionShell);
+}
 
 function sectionShell(key) {
   const g = GROUPS[key];
-  state.ui[key] = { sort: "count", min: g.min, all: false };
+  const ui = state.ui[key] ||= { sort: "count", min: g.min, all: false };
+  const opts = [["count", "Most titles"], ["high", "Highest rated"], ["low", "Lowest rated"], ["above", "Most above IMDb"], ["below", "Most below IMDb"]]
+    .map(([v, l]) => `<option value="${v}"${v === ui.sort ? " selected" : ""}>${l}</option>`).join("");
   const controls = g.fixed ? "" : `<div class="controls">
-      <label for="sort-${key}">Sort <select id="sort-${key}" data-g="${key}" data-k="sort">
-        <option value="count">Most titles</option><option value="high">Highest rated</option><option value="low">Lowest rated</option>
-        <option value="above">Most above IMDb</option><option value="below">Most below IMDb</option></select></label>
-      <label for="min-${key}">At least <input type="number" id="min-${key}" data-g="${key}" data-k="min" min="1" max="50" value="${g.min}"> titles</label>
+      <label for="sort-${key}">Sort <select id="sort-${key}" data-g="${key}" data-k="sort">${opts}</select></label>
+      <label for="min-${key}">At least <input type="number" id="min-${key}" data-g="${key}" data-k="min" min="1" max="50" value="${ui.min}"> titles</label>
     </div>`;
   $("#sec-" + key).innerHTML = `<div class="phead"><div><h2>${g.title}</h2><p class="sub">${g.sub}</p></div>${controls}</div><div id="list-${key}"></div>`;
 }
@@ -615,7 +632,7 @@ function titleLine(t) {
 function renderGroup(key, items) {
   const g = GROUPS[key], ui = state.ui[key], el = $("#list-" + key);
   if (g.tmdb && !items.some(t => state.tmdb.titles[t.id])) {
-    el.innerHTML = `<div class="empty">Click Look up cast and franchises above to see ${g.title.toLowerCase()}.</div>`; return;
+    el.innerHTML = `<div class="empty">${tmdbRunning ? "Looking up details on TMDB…" : `Click Look up details on TMDB above to see ${g.title.toLowerCase()}.`}</div>`; return;
   }
   let groups = groupBy(items, g.keys);
   if (!g.fixed) groups = groups.filter(x => x.n >= ui.min);
@@ -645,12 +662,27 @@ function renderOverview(items) {
   const diff = mean(crowdItems.map(t => t.rating - t.imdb));
   const filmMins = items.filter(t => FILM_TYPES.has(t.type)).reduce((s, t) => s + (t.runtime || 0), 0);
   const above = crowdItems.filter(t => t.rating > t.imdb).length;
+  const tv = state.filter === "tv";
+  const count = type => items.filter(t => t.type === type).length;
+  let first, last;
+  if (tv) {
+    const series = items.filter(t => t.type === "TV Series" || t.type === "Mini-series");
+    const eps = count("Episode");
+    first = ["Series rated", fmtInt(series.length), `${count("Mini-series")} mini-series${eps ? ` · ${eps} episodes` : ""}`];
+    const known = series.filter(t => tm(t).ns);
+    last = ["Seasons", known.length ? fmtInt(known.reduce((s, t) => s + tm(t).ns, 0)) : "–",
+      known.length ? `in total across those ${known.length} series` : "shown after the TMDB lookup"];
+  } else {
+    const other = n - count("Movie");
+    first = ["Films rated", fmtInt(n), other ? `${count("Movie")} features · ${other} TV films, shorts and videos` : "all feature films"];
+    last = ["Film hours", fmtInt(filmMins / 60), `about ${fmtInt(filmMins / 60 / 24)} days of films`];
+  }
   const tiles = [
-    ["Titles rated", fmtInt(n), `${items.filter(t => FILM_TYPES.has(t.type)).length} films · ${items.filter(t => TV_TYPES.has(t.type)).length} TV`],
+    first,
     ["Your average", f1(avg), `IMDb average ${f1(crowd)} for the same titles`],
     ["Versus the crowd", diff == null ? "–" : (diff >= 0 ? "+" : "−") + Math.abs(diff).toFixed(2), diff == null ? "" : diff >= 0 ? "points above IMDb per title" : "points below IMDb per title"],
     ["Rated above IMDb", crowdItems.length ? Math.round(100 * above / crowdItems.length) + "%" : "–", `${above} of ${crowdItems.length} titles`],
-    ["Film hours", fmtInt(filmMins / 60), `about ${fmtInt(filmMins / 60 / 24)} days of films`]
+    last
   ];
   $("#tiles").innerHTML = tiles.map(([k, v, d]) => `<div class="tile"><span class="k">${k}</span><span class="v">${v}</span><span class="d">${esc(d)}</span></div>`).join("");
 
@@ -670,7 +702,7 @@ function renderOverview(items) {
     if (best && worst && best !== worst) s += ` Among genres with ${minG}+ titles, you score <b>${esc(best.name)}</b> highest (${f1(best.avg)}) and <b>${esc(worst.name)}</b> lowest (${f1(worst.avg)}).`;
     notes.push(s);
   }
-  const dirs = groupBy(items, t => t.directors).filter(d => d.n >= 3);
+  const dirs = tv ? [] : groupBy(items, t => t.directors).filter(d => d.n >= 3);
   if (dirs.length) {
     const most = [...dirs].sort(SORTS.count)[0], fav = [...dirs].sort(SORTS.high)[0];
     notes.push(`You've rated more films by <b>${esc(most.name)}</b> than any other director (${most.n}).` +
@@ -678,6 +710,12 @@ function renderOverview(items) {
   }
   const decs = groupBy(items, GROUPS.decades.keys);
   if (decs.length) { const d = [...decs].sort(SORTS.count)[0]; notes.push(`The <b>${d.name}</b> are your best-covered decade, with ${d.n} titles averaging ${f1(d.avg)}.`); }
+  const studios = groupBy(items, studiosOf).filter(s => s.n >= 3);
+  if (studios.length) {
+    const most = [...studios].sort(SORTS.count)[0], fav = [...studios].sort(SORTS.high)[0], kind = tv ? "network" : "studio";
+    notes.push(`<b>${esc(most.name)}</b> is the ${kind} behind more of your ${tv ? "series" : "films"} than any other (${most.n}).` +
+      (fav !== most ? ` Of ${kind}s with 3+ titles, you rate <b>${esc(fav.name)}</b> highest, at ${f1(fav.avg)}.` : ""));
+  }
   $("#notes").innerHTML = notes.map(s => `<li>${s}</li>`).join("");
 }
 
@@ -703,12 +741,20 @@ function titleLists(lists) {
 function render() {
   const items = visible();
   if (!items.length) {
-    $("#tiles").innerHTML = ""; $("#notes").innerHTML = `<li>No titles of this kind in the file. Choose Everything to see all of them.</li>`;
+    $("#tiles").innerHTML = ""; $("#notes").innerHTML = `<li>This file has no ${state.filter === "tv" ? "TV" : "films"} in it.</li>`;
+    $("#lists").innerHTML = ""; $("#slot-top").innerHTML = ""; $("#slot-bottom").innerHTML = "";
     return;
   }
+  if (!$("#sec-genres")) buildLayout();
   renderOverview(items);
   renderLists(items);
-  for (const k of Object.keys(GROUPS)) renderGroup(k, items);
+  for (const k of shownGroups()) renderGroup(k, items);
+}
+function setMode(mode) {
+  state.filter = mode;
+  document.querySelectorAll(".seg button").forEach(x => x.setAttribute("aria-pressed", String(x.dataset.f === mode)));
+  buildLayout();
+  render();
 }
 
 function load(text, source, fileName) {
@@ -722,7 +768,13 @@ function load(text, source, fileName) {
     pill.textContent = "Your ratings"; pill.className = "pill";
     $("#srcText").textContent = `${fileName} · ${titles.length.toLocaleString("en-US")} titles`;
   }
-  render();
+  const nFilms = titles.filter(t => FILM_TYPES.has(t.type)).length, nTv = titles.filter(t => TV_TYPES.has(t.type)).length;
+  for (const [mode, k] of [["films", nFilms], ["tv", nTv]]) {
+    $("#cnt-" + mode).textContent = k.toLocaleString("en-US");
+    document.querySelector(`.seg button[data-f="${mode}"]`).disabled = !k;
+  }
+  // Stay on the current view unless the new file has nothing for it.
+  setMode(state.filter === "tv" ? (nTv ? "tv" : "films") : (nFilms || !nTv ? "films" : "tv"));
   updateTmdbStatus();
 }
 
@@ -751,11 +803,7 @@ const dz = $("#drop");
 document.addEventListener("drop", e => readFile(e.dataTransfer?.files?.[0]));
 
 /* ---------- Filter and section controls ---------- */
-document.querySelectorAll(".seg button").forEach(b => b.addEventListener("click", () => {
-  state.filter = b.dataset.f;
-  document.querySelectorAll(".seg button").forEach(x => x.setAttribute("aria-pressed", String(x === b)));
-  render();
-}));
+document.querySelectorAll(".seg button").forEach(b => b.addEventListener("click", () => { if (b.dataset.f !== state.filter) setMode(b.dataset.f); }));
 document.addEventListener("change", e => {
   const g = e.target.dataset?.g; if (!g) return;
   const ui = state.ui[g];
@@ -787,7 +835,7 @@ async function proxyGet(path) {
   }
   throw new TmdbError("The lookup service is busy. Wait a minute and try again.", true);
 }
-const lookupTitle = async t => (await proxyGet(`/title/${t.id}`)) || { c: [], col: null };
+const lookupTitle = async t => (await proxyGet(`/v2/title/${t.id}`)) || { c: [], col: null };
 
 async function pool(list, size, fn, onTick) {
   let i = 0, done = 0, fatal = null;
@@ -802,20 +850,21 @@ async function pool(list, size, fn, onTick) {
   if (fatal) throw fatal;
 }
 
-function saveTmdb() { store.set("rr.tmdb.titles.v1", state.tmdb.titles); store.set("rr.tmdb.cols.v1", state.tmdb.cols); }
+function saveTmdb() { store.set("rr.tmdb.titles.v2", state.tmdb.titles); store.set("rr.tmdb.cols.v1", state.tmdb.cols); }
 function setProgress(frac) { const p = $("#tmdbProg"); p.hidden = frac == null; if (frac != null) p.firstElementChild.style.width = (frac * 100).toFixed(1) + "%"; }
 function setStatus(msg, isErr) { const s = $("#tmdbStatus"); s.textContent = msg; s.classList.toggle("err", !!isErr); }
 function lookupable() { return state.all.filter(t => !["Episode", "Video Game", "Podcast"].includes(t.type)); }
 function updateTmdbStatus() {
   if (tmdbRunning) return;
   const all = lookupable(), have = all.filter(t => state.tmdb.titles[t.id]).length;
-  setStatus(have ? `Cast and series data saved for ${have} of ${all.length} titles.${have < all.length ? " Look up again to fill in the rest." : ""}` : "");
+  setStatus(have ? `TMDB details saved for ${have} of ${all.length} titles.${have < all.length ? " Look up again to fill in the rest." : ""}` : "");
 }
 
 async function runTmdb() {
   if (tmdbRunning) return;
   const todo = lookupable().filter(t => !state.tmdb.titles[t.id]);
   tmdbRunning = true; $("#tmdbGo").disabled = true;
+  for (const k of shownGroups()) if (GROUPS[k].tmdb) renderGroup(k, visible());
   try {
     if (todo.length) {
       setStatus(`Looking up ${todo.length} titles…`); setProgress(0);
@@ -848,7 +897,6 @@ function buildColNames() {
 $("#tmdbGo").addEventListener("click", runTmdb);
 
 /* ---------- Start ---------- */
-for (const k of Object.keys(GROUPS)) sectionShell(k);
 store.del("rr.tmdb.key");
 buildColNames();
 load(sampleCSV(), "example");
