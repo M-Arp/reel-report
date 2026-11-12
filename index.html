@@ -94,15 +94,13 @@ select, input[type=number], input[type=password], input[type=text] { font: 14px 
 input[type=number] { width: 4.2em; }
 
 /* Overview */
-.tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(165px, 1fr)); background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); overflow: hidden; }
+.tiles { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); overflow: hidden; }
 .tile { padding: 16px 18px; display: grid; gap: 4px; align-content: start; box-shadow: 1px 0 0 var(--line), 0 1px 0 var(--line); }
 .tile .k { font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: .08em; color: var(--muted); }
 .tile .v { font: 700 1.9rem/1.1 var(--font-display); font-variant-numeric: tabular-nums; }
+.tile .v.name { font-size: 1.45rem; line-height: 1.2; overflow-wrap: anywhere; }
+@media (max-width: 640px) { .tiles { grid-template-columns: repeat(2, minmax(0, 1fr)); } .tile .v.name { font-size: 1.15rem; } }
 .tile .d { font-size: 13px; color: var(--muted); }
-.notes { margin: 22px 0 0; padding: 0; list-style: none; display: grid; gap: 10px; max-width: 75ch; }
-.notes li { padding-left: 18px; position: relative; }
-.notes li::before { content: ""; position: absolute; left: 0; top: .62em; width: 7px; height: 7px; border-radius: 2px; background: var(--accent); }
-.notes b { font-weight: 600; }
 
 /* Grouped lists */
 .ghead, .grow > summary { display: grid; grid-template-columns: minmax(0, 1fr) 3.6rem minmax(96px, 10rem) 4.2rem; gap: 12px; align-items: center; }
@@ -208,15 +206,14 @@ footer p { margin: 0 0 6px; max-width: 80ch; }
 <main class="wrap">
   <section class="panel" id="overview">
     <div class="tiles" id="tiles"></div>
-    <ul class="notes" id="notes"></ul>
   </section>
-
-  <div id="slot-top"></div>
 
   <section class="panel">
     <div class="phead"><div><h2>Likes and dislikes</h2><p class="sub">Your favourites, your least favourites, and where you part ways with the IMDb crowd. Crowd comparisons only use titles with at least 1,000 votes.</p></div></div>
     <div class="lists" id="lists"></div>
   </section>
+
+  <div id="slot-top"></div>
 
   <section class="panel">
     <div class="tmdb" id="tmdbBox">
@@ -655,68 +652,48 @@ function renderGroup(key, items) {
 
 /* ---------- Overview ---------- */
 function renderOverview(items) {
-  const n = items.length;
+  const n = items.length, tv = state.filter === "tv";
   const avg = mean(items.map(t => t.rating));
   const crowdItems = items.filter(t => t.imdb != null);
   const crowd = mean(crowdItems.map(t => t.imdb));
-  const diff = mean(crowdItems.map(t => t.rating - t.imdb));
-  const filmMins = items.filter(t => FILM_TYPES.has(t.type)).reduce((s, t) => s + (t.runtime || 0), 0);
-  const above = crowdItems.filter(t => t.rating > t.imdb).length;
-  const tv = state.filter === "tv";
+  const diff = crowdItems.length ? mean(crowdItems.map(t => t.rating - t.imdb)) : null;
+  const noun = tv ? ["show", "shows"] : ["film", "films"];
+  const titlesOf = k => `${fmtInt(k)} ${k === 1 ? noun[0] : noun[1]}`;
   const count = type => items.filter(t => t.type === type).length;
-  let first, last;
+  // Highest average among groups with at least the first minimum that any group reaches.
+  const favourite = (keysOf, mins) => {
+    const groups = groupBy(items, keysOf);
+    for (const m of mins) { const q = groups.filter(g => g.n >= m); if (q.length) return q.sort(SORTS.high)[0]; }
+    return null;
+  };
+  const named = (label, g, empty) => g ? [label, esc(g.name), `${f1(g.avg)} average across ${titlesOf(g.n)}`, true] : [label, "–", empty];
+  const lookedUp = items.some(t => state.tmdb.titles[t.id]);
+
+  const tiles = [];
   if (tv) {
-    const series = items.filter(t => t.type === "TV Series" || t.type === "Mini-series");
     const eps = count("Episode");
-    first = ["Series rated", fmtInt(series.length), `${count("Mini-series")} mini-series${eps ? ` · ${eps} episodes` : ""}`];
-    const known = series.filter(t => tm(t).ns);
-    last = ["Seasons", known.length ? fmtInt(known.reduce((s, t) => s + tm(t).ns, 0)) : "–",
-      known.length ? `in total across those ${known.length} series` : "shown after the TMDB lookup"];
+    tiles.push(["Shows rated", fmtInt(count("TV Series") + count("Mini-series")), `${count("Mini-series")} mini-series${eps ? ` · ${fmtInt(eps)} episodes` : ""}`]);
   } else {
     const other = n - count("Movie");
-    first = ["Films rated", fmtInt(n), other ? `${count("Movie")} features · ${other} TV films, shorts and videos` : "all feature films"];
-    last = ["Film hours", fmtInt(filmMins / 60), `about ${fmtInt(filmMins / 60 / 24)} days of films`];
+    tiles.push(["Films rated", fmtInt(n), other ? `${fmtInt(count("Movie"))} features · ${fmtInt(other)} TV films, shorts and videos` : "all feature films"]);
   }
-  const tiles = [
-    first,
-    ["Your average", f1(avg), `IMDb average ${f1(crowd)} for the same titles`],
-    ["Versus the crowd", diff == null ? "–" : (diff >= 0 ? "+" : "−") + Math.abs(diff).toFixed(2), diff == null ? "" : diff >= 0 ? "points above IMDb per title" : "points below IMDb per title"],
-    ["Rated above IMDb", crowdItems.length ? Math.round(100 * above / crowdItems.length) + "%" : "–", `${above} of ${crowdItems.length} titles`],
-    last
-  ];
-  $("#tiles").innerHTML = tiles.map(([k, v, d]) => `<div class="tile"><span class="k">${k}</span><span class="v">${v}</span><span class="d">${esc(d)}</span></div>`).join("");
-
-  const notes = [];
-  if (diff != null) notes.push(Math.abs(diff) < 0.15 ? `Your ratings track IMDb closely: on average you're within <b>${Math.abs(diff).toFixed(2)}</b> points of the crowd.`
-    : `You rate <b>${Math.abs(diff).toFixed(1)} points ${diff > 0 ? "above" : "below"}</b> IMDb on average, so you're ${diff > 0 ? "more generous" : "tougher"} than the crowd.`);
-  const counts = Array(11).fill(0); items.forEach(t => counts[t.rating]++);
-  const mode = counts.indexOf(Math.max(...counts));
-  notes.push(`Your most common rating is <b>${mode}</b> (${Math.round(100 * counts[mode] / n)}% of titles). You've given out <b>${counts[10]}</b> perfect 10s and <b>${counts[1] + counts[2] + counts[3]}</b> ratings of 3 or lower.`);
-  const genres = groupBy(items, t => t.genres);
-  if (genres.length) {
-    const top = [...genres].sort(SORTS.count)[0];
-    const minG = Math.max(3, Math.round(n * 0.03));
-    const qual = genres.filter(g => g.n >= minG);
-    const best = [...qual].sort(SORTS.high)[0], worst = [...qual].sort(SORTS.low)[0];
-    let s = `<b>${esc(top.name)}</b> is your most rated genre with ${top.n} titles.`;
-    if (best && worst && best !== worst) s += ` Among genres with ${minG}+ titles, you score <b>${esc(best.name)}</b> highest (${f1(best.avg)}) and <b>${esc(worst.name)}</b> lowest (${f1(worst.avg)}).`;
-    notes.push(s);
+  tiles.push(["Your average", f1(avg), diff == null ? "no IMDb averages in file"
+    : Math.abs(diff) < 0.05 ? `level with IMDb's ${f1(crowd)}` : `${Math.abs(diff).toFixed(1)} ${diff > 0 ? "above" : "below"} IMDb's ${f1(crowd)}`]);
+  tiles.push(named("Favourite genre", favourite(t => t.genres, [Math.max(3, Math.round(n * 0.03)), 2, 1]), "no genres in file"));
+  const decade = groupBy(items, GROUPS.decades.keys).sort(SORTS.count)[0];
+  tiles.push(decade ? ["Most-watched decade", decade.name, `${titlesOf(decade.n)} · ${f1(decade.avg)} average`, true] : ["Most-watched decade", "–", "no years in file"]);
+  if (tv) {
+    tiles.push(named("Favourite network", favourite(studiosOf, [3, 2]), lookedUp ? "no network with 2 or more shows" : "shown after the TMDB lookup"));
+    const known = items.filter(t => tm(t).ns);
+    tiles.push(["Seasons", known.length ? fmtInt(known.reduce((s, t) => s + tm(t).ns, 0)) : "–",
+      known.length ? `in total across ${titlesOf(known.length)}` : "shown after the TMDB lookup"]);
+  } else {
+    tiles.push(named("Favourite director", favourite(t => t.directors, [3, 2]), "no director with 2 or more films"));
+    const mins = items.reduce((s, t) => s + (t.runtime || 0), 0);
+    tiles.push(["Film hours", fmtInt(mins / 60), `about ${fmtInt(mins / 60 / 24)} days of films`]);
   }
-  const dirs = tv ? [] : groupBy(items, t => t.directors).filter(d => d.n >= 3);
-  if (dirs.length) {
-    const most = [...dirs].sort(SORTS.count)[0], fav = [...dirs].sort(SORTS.high)[0];
-    notes.push(`You've rated more films by <b>${esc(most.name)}</b> than any other director (${most.n}).` +
-      (fav !== most ? ` Of directors with 3+ titles, <b>${esc(fav.name)}</b> has your best average at ${f1(fav.avg)}.` : ` They also have your best average among directors with 3+ titles, at ${f1(fav.avg)}.`));
-  }
-  const decs = groupBy(items, GROUPS.decades.keys);
-  if (decs.length) { const d = [...decs].sort(SORTS.count)[0]; notes.push(`The <b>${d.name}</b> are your best-covered decade, with ${d.n} titles averaging ${f1(d.avg)}.`); }
-  const studios = groupBy(items, studiosOf).filter(s => s.n >= 3);
-  if (studios.length) {
-    const most = [...studios].sort(SORTS.count)[0], fav = [...studios].sort(SORTS.high)[0], kind = tv ? "network" : "studio";
-    notes.push(`<b>${esc(most.name)}</b> is the ${kind} behind more of your ${tv ? "series" : "films"} than any other (${most.n}).` +
-      (fav !== most ? ` Of ${kind}s with 3+ titles, you rate <b>${esc(fav.name)}</b> highest, at ${f1(fav.avg)}.` : ""));
-  }
-  $("#notes").innerHTML = notes.map(s => `<li>${s}</li>`).join("");
+  $("#tiles").innerHTML = tiles.map(([k, v, d, isName]) =>
+    `<div class="tile"><span class="k">${k}</span><span class="v${isName ? " name" : ""}">${v}</span><span class="d">${esc(d)}</span></div>`).join("");
 }
 
 /* ---------- Likes and dislikes ---------- */
@@ -741,7 +718,7 @@ function titleLists(lists) {
 function render() {
   const items = visible();
   if (!items.length) {
-    $("#tiles").innerHTML = ""; $("#notes").innerHTML = `<li>This file has no ${state.filter === "tv" ? "TV" : "films"} in it.</li>`;
+    $("#tiles").innerHTML = `<div class="tile"><span class="d">This file has no ${state.filter === "tv" ? "TV" : "films"} in it.</span></div>`;
     $("#lists").innerHTML = ""; $("#slot-top").innerHTML = ""; $("#slot-bottom").innerHTML = "";
     return;
   }
