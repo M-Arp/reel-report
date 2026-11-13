@@ -971,7 +971,7 @@ function makePersona(items, mode, tmdbOf) {
   const mod = mods[0]?.m || FALLBACK_MODS.find(m => m.s(c) > 0);
   const items_ = tv ? "shows" : "films", item_ = tv ? "show" : "film";
   const fill = s => s.replace("{items}", items_).replace("{item}", item_);
-  const genreWhy = pick.genres.length ? `${pick.genres.join(" and ")} ${pick.genres.length > 1 ? "together " : ""}in ${pick.n} of your ${L.length} ${label}` : "";
+  const genreWhy = pick.genres.length ? `${pick.genres.join(" and ")} ${pick.genres.length > 1 ? "together " : ""}in ${pick.n} of your ${L.length} favourite ${items_}` : "";
   return {
     name: `The ${val(mod.name, c)} ${noun.name}`, line: fill(noun.line) + " " + fill(val(mod.line, c)),
     why: [genreWhy, mod.why(c)].filter(Boolean), pal: PALETTES[noun.pal], loved: L, lovedLabel: label, top,
