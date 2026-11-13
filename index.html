@@ -974,7 +974,7 @@ function makePersona(items, mode, tmdbOf) {
   const genreWhy = pick.genres.length ? `${pick.genres.join(" and ")} ${pick.genres.length > 1 ? "together " : ""}in ${pick.n} of your ${L.length} favourite ${items_}` : "";
   return {
     name: `The ${val(mod.name, c)} ${noun.name}`, line: fill(noun.line) + " " + fill(val(mod.line, c)),
-    why: [genreWhy, mod.why(c)].filter(Boolean), pal: PALETTES[noun.pal], loved: L, lovedLabel: label, top,
+    why: [genreWhy].filter(Boolean), pal: PALETTES[noun.pal], loved: L, lovedLabel: label, top,
     debug: { cands: cands.slice(0, 4).map(x => x.noun + ":" + x.genres.join("+") + " " + x.score.toFixed(2)), mods: mods.map(x => x.m.key + " " + x.s.toFixed(2)), c }
   };
 }
